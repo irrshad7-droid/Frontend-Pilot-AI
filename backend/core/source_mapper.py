@@ -9,7 +9,7 @@ import tree_sitter_typescript
 
 # Add core to path if running standalone
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from core.schemas import SourceSnapshot, CandidateFile, CandidateComponent, CandidateNode
+from core.schemas import SourceSnapshot, CandidateFile, CandidateComponent, CandidateNode, ExplorerSnapshot
 
 TARGET_APP_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "target-app", "src"))
 
@@ -48,6 +48,19 @@ class SourceMapper:
                         return self._extract_text(id_node, source_bytes)
             current = current.parent
         return "UnknownComponent"
+
+    def run(self, explorer_snapshot: ExplorerSnapshot) -> SourceSnapshot:
+        # Extract target label from explorer journey for the mapper query
+        target_label = "unknown"
+        target_type = "unknown"
+        for step in explorer_snapshot.detected_journey:
+            if step.action in ["click_submit", "click"]:
+                for el in explorer_snapshot.discovered_elements:
+                    if el.selector == step.target_selector:
+                        target_label = el.visible_label
+                        target_type = el.element_type
+                        break
+        return self.find_candidates(target_label=target_label, target_element_type=target_type)
 
     def find_candidates(self, target_label: str, target_element_type: str = None) -> SourceSnapshot:
         files = self._walk_files()
