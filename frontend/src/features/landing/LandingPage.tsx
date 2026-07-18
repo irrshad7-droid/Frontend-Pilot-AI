@@ -1,7 +1,9 @@
-import { ArrowRight, Braces, CircleCheck, Eye, FileSearch, Sparkles, Wrench } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowRight, Braces, CircleCheck, Eye, FileSearch, Play, Sparkles, Wrench } from 'lucide-react'
 import { AppShell } from '../../components/chrome/AppShell'
 import { navigateToRun } from '../../hooks/useHashRoute'
 import { demoRun } from '../../fixtures/demoRun'
+import { startPipeline } from '../../api/pipeline'
 
 const stages = [
   ['Observe', 'ExplorerSnapshot', Eye],
@@ -12,6 +14,22 @@ const stages = [
 ] as const
 
 export function LandingPage() {
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
+
+  async function handleStartRealRun() {
+    setStarting(true)
+    setStartError(null)
+    try {
+      const result = await startPipeline()
+      navigateToRun(result.run_id)
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setStarting(false)
+    }
+  }
+
   return (
     <AppShell>
       <main className="landing-page">
@@ -24,15 +42,28 @@ export function LandingPage() {
             </p>
             <div className="hero-scenario">
               <span>Reported issue · Todo App</span>
-              <strong>“Clear completed” does nothing.</strong>
+              <strong>\u201cClear completed\u201d does nothing.</strong>
               <small>Browser evidence → source mapping → verified repair</small>
             </div>
             <div className="hero-actions">
               <button className="primary-button" onClick={() => navigateToRun(demoRun.id)}>
-                Watch an autonomous repair <ArrowRight size={17} />
+                Explore a demo run <ArrowRight size={17} />
               </button>
-              <span className="quiet-label"><Braces size={15} /> Snapshot-driven by design</span>
+              <button
+                className="primary-button"
+                onClick={handleStartRealRun}
+                disabled={starting}
+                style={{ background: 'transparent', color: 'var(--signal-bright)', borderColor: 'var(--signal)' }}
+              >
+                {starting ? 'Starting…' : 'Start a real run'} <Play size={15} />
+              </button>
             </div>
+            {startError && (
+              <p style={{ marginTop: '12px', color: 'var(--danger)', fontSize: '12px', lineHeight: '1.5' }}>
+                {startError}
+              </p>
+            )}
+            <span className="quiet-label" style={{ marginTop: '12px' }}><Braces size={15} /> Snapshot-driven by design</span>
           </div>
           <aside className="hero-orbit" aria-label="Pipeline overview">
             <div className="orbit-grid" />
