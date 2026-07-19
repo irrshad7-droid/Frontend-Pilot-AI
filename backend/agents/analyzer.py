@@ -22,6 +22,9 @@ async def analyze_failure(explorer_snapshot: ExplorerSnapshot, source_snapshot: 
     # Extract available files from Source Mapper
     available_files = [f.file_path for f in source_snapshot.candidate_files]
     
+    # Log the available files for debugging
+    logger.info("analyzer_source_mapper_files", count=len(available_files), files=available_files)
+    
     system_prompt = """You are the Principal Software Architect and Lead Frontend QA Engineer for FrontendPilot AI.
 You are investigating a runtime failure in a React application.
 
@@ -58,10 +61,21 @@ AVAILABLE FILES (USE ONLY THESE):
 Analyze this failure and return the structured AnalysisSnapshot.
 """
 
-    logger.info("requesting_analysis_from_llm")
+    logger.info("requesting_analysis_from_llm", available_files_count=len(available_files))
     
     try:
-        return await call_llm(system_prompt, user_prompt, AnalysisSnapshot)
+        result = await call_llm(system_prompt, user_prompt, AnalysisSnapshot)
+        
+        # Post-process: Ensure target_files is populated from available_files if LLM didn't set it
+        if not result.repair_context.target_files and available_files:
+            logger.warning(
+                "analyzer_target_files_empty_using_fallback",
+                available_files=available_files
+            )
+            # Use the top 3 files by confidence as fallback
+            result.repair_context.target_files = available_files[:3]
+        
+        return result
     except LLMError as e:
         logger.error("analysis_failed", error=str(e), provider=e.provider, error_type=e.error_type)
         raise

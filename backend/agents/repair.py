@@ -161,7 +161,18 @@ async def generate_repair(analysis: AnalysisSnapshot) -> RepairSnapshot:
     
     # Log the available files for debugging
     logger.info("repair_available_files", count=len(available_files), files=available_files)
-            
+    
+    # CRITICAL: If no files are available, we cannot proceed
+    if not available_files:
+        raise LLMError(
+            "No target files provided in repair_context. "
+            "The Analyzer did not identify any files to repair. "
+            "Check that Source Mapper found candidate files.",
+            "repair",
+            "config"
+        )
+    
+    # Log the complete prompt for debugging
     system_prompt = """You are the Principal Software Engineer (Codex Repair Agent) for FrontendPilot AI.
 You receive an Analysis Snapshot containing the root cause of a UI bug and specific repair objectives.
 Your job is to generate a surgical Search/Replace diff block to fix the bug.
@@ -194,7 +205,7 @@ AVAILABLE REPOSITORY FILES (USE ONLY THESE):
 
 Generate the required RepairSnapshot to fix this issue.
 """
-
+    
     logger.info("requesting_repair_from_llm", available_files_count=len(available_files))
     
     try:
