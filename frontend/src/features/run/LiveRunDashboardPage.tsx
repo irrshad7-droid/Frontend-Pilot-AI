@@ -1,9 +1,11 @@
+import { useState, useEffect } from 'react'
 import { ChevronRight, Clock3, ExternalLink, FileWarning, Radio, AlertTriangle, Loader2 } from 'lucide-react'
 import { AppShell } from '../../components/chrome/AppShell'
 import { StageRail } from '../../components/chrome/StageRail'
 import { StatusBadge } from '../../components/data-display/StatusBadge'
 import { usePipelineRun } from '../../hooks/usePipelineRun'
 import type { PipelineStage, StageStatus } from '../../types/pipeline'
+import { stageColors } from '../../types/pipeline'
 import type { PipelineSnapshot } from '../../api/pipeline'
 import { ExplorerVisualizer, SourceMapperVisualizer, AnalyzerVisualizer, RepairVisualizer, VerifierVisualizer } from '../../components/run/StageVisualizers'
 
@@ -34,7 +36,6 @@ function deriveStages(snap: PipelineSnapshot | null, runStatus: string): Pipelin
     }))
   }
 
-  // Determine which snapshots are populated
   let firstMissing = -1
   const stages: PipelineStage[] = STAGE_DEFS.map((def, i) => {
     const hasSnapshot = snap[def.snapshotKey as keyof PipelineSnapshot] != null
@@ -45,7 +46,6 @@ function deriveStages(snap: PipelineSnapshot | null, runStatus: string): Pipelin
       status = 'complete'
     } else if (firstMissing === -1) {
       firstMissing = i
-      // Check if this stage failed
       const failedEvent = snap.events.find(e => e.stage === def.metricKey && e.status === 'failed')
       const skippedEvent = snap.events.find(e => e.stage === def.metricKey && e.status === 'skipped')
       if (failedEvent) {
@@ -87,7 +87,6 @@ function deriveStages(snap: PipelineSnapshot | null, runStatus: string): Pipelin
 }
 
 function extractSummary(stageId: string, snap: PipelineSnapshot): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const s = snap as any
   if (stageId === 'explorer' && s.explorer_snapshot) {
     const es = s.explorer_snapshot
@@ -116,7 +115,6 @@ function extractSummary(stageId: string, snap: PipelineSnapshot): string {
 }
 
 function extractInsight(stageId: string, snap: PipelineSnapshot): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const s = snap as any
   if (stageId === 'explorer' && s.explorer_snapshot) {
     const es = s.explorer_snapshot
@@ -140,7 +138,6 @@ function extractInsight(stageId: string, snap: PipelineSnapshot): string {
 }
 
 function extractFacts(stageId: string, snap: PipelineSnapshot): string[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const s = snap as any
   if (stageId === 'explorer' && s.explorer_snapshot) {
     const es = s.explorer_snapshot
@@ -183,17 +180,40 @@ function extractFacts(stageId: string, snap: PipelineSnapshot): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Mobile pipeline (reused from RunDashboardPage)
+// Mobile pipeline
 // ---------------------------------------------------------------------------
 
-function MobilePipeline({ stages }: { stages: PipelineStage[] }) {
+function MobilePipeline({ stages, selectedStageId, onSelectStage }: { stages: PipelineStage[]; selectedStageId: string; onSelectStage: (id: string) => void }) {
   return (
-    <nav className="mobile-pipeline" aria-label="Pipeline stages">
-      {stages.map((stage, index) => (
-        <div className={`mobile-stage mobile-stage-${stage.status}`} key={stage.id}>
-          <span>{index + 1}</span><strong>{stage.name}</strong>
-        </div>
-      ))}
+    <nav className="mobile-pipeline" aria-label="Pipeline stages" style={{ padding: '8px', gap: '8px' }}>
+      {stages.map((stage, index) => {
+        const isSelected = stage.id === selectedStageId
+        const activeColor = stageColors[stage.id]
+        return (
+          <div 
+            className={`mobile-stage mobile-stage-${stage.status}`} 
+            key={stage.id}
+            onClick={() => onSelectStage(stage.id)}
+            style={{
+              cursor: 'pointer',
+              border: isSelected ? `1px solid ${activeColor}` : '1px solid var(--border)',
+              background: isSelected ? `${activeColor}15` : 'transparent',
+              padding: '6px 8px',
+              borderRadius: '6px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flex: 1,
+              minWidth: 0
+            }}
+          >
+            <span style={{ fontSize: '9px', color: isSelected ? activeColor : 'var(--text-muted)' }}>0{index + 1}</span>
+            <strong style={{ fontSize: '10px', color: isSelected ? 'var(--text)' : 'var(--text-secondary)' }}>{stage.name}</strong>
+          </div>
+        )
+      })}
     </nav>
   )
 }
@@ -208,9 +228,21 @@ interface Props {
 
 export function LiveRunDashboardPage({ runId }: Props) {
   const { data, error, loading } = usePipelineRun(runId)
+  const [selectedStageId, setSelectedStageId] = useState<string | null>(null)
 
   const stages = deriveStages(data?.snapshot ?? null, data?.status ?? 'Running')
+  
+  // Auto-focus on active stage when running or last completed/failed stage
   const activeStage = stages.find(s => s.status === 'running') ?? stages.find(s => s.status === 'failed') ?? stages[stages.length - 1]
+  const currentStageId = selectedStageId || activeStage.id
+  const displayedStage = stages.find(s => s.id === currentStageId) || activeStage
+
+  // Sync selected stage if running stage changes and user has not interacted
+  useEffect(() => {
+    if (!selectedStageId) {
+      setSelectedStageId(activeStage.id)
+    }
+  }, [activeStage.id, selectedStageId])
 
   const runStatus = data?.status ?? 'Running'
   const mappedBadgeStatus = runStatus === 'Running' ? 'Running' as const
@@ -222,7 +254,6 @@ export function LiveRunDashboardPage({ runId }: Props) {
     ? `${data.snapshot.total_runtime_seconds.toFixed(1)}s`
     : '—'
 
-  // Loading state
   if (loading && !data) {
     return (
       <AppShell showBack>
@@ -236,7 +267,6 @@ export function LiveRunDashboardPage({ runId }: Props) {
     )
   }
 
-  // Error state — backend unreachable or run not found
   if (error && !data) {
     return (
       <AppShell showBack>
@@ -257,87 +287,156 @@ export function LiveRunDashboardPage({ runId }: Props) {
   return (
     <AppShell showBack>
       <main className="dashboard-page">
-        <StageRail stages={stages} />
-        <section className="workspace">
-          <div className="run-breadcrumb">
-            <span>Runs</span><ChevronRight size={14} /><strong>{runId}</strong>
-            <span className="demo-chip" style={runStatus === 'Running' ? { borderColor: 'rgba(139,140,255,.32)', color: 'var(--signal-bright)', background: 'var(--signal-soft)' } : runStatus === 'Success' ? { borderColor: 'rgba(110,231,183,.32)', color: 'var(--success)', background: 'rgba(110,231,183,.08)' } : { borderColor: 'rgba(251,113,133,.32)', color: 'var(--danger)', background: 'rgba(251,113,133,.08)' }}>
-              Live run
-            </span>
-          </div>
-          <header className="run-header">
-            <div>
-              <p className="eyebrow">Autonomous investigation · Target App</p>
-              <h1>{data?.snapshot?.final_result && runStatus !== 'Running' ? data.snapshot.final_result : 'Pipeline executing…'}</h1>
-              <p className="run-target"><ExternalLink size={14} /> localhost:5173</p>
+        <StageRail 
+          stages={stages} 
+          selectedStageId={currentStageId}
+          onSelectStage={setSelectedStageId}
+        />
+        
+        <section className="workspace" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* Breadcrumb / Top Bar details */}
+          <div className="run-breadcrumb" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>Runs</span>
+              <ChevronRight size={12} />
+              <strong>{runId}</strong>
+              <span className="demo-chip" style={{ border: '1px solid rgba(139,140,255,.2)', color: 'var(--signal-bright)', background: 'var(--signal-soft)' }}>
+                Live Execution
+              </span>
             </div>
-            <div className="run-status-cluster">
+            
+            <div className="run-status-cluster" style={{ gap: '16px' }}>
               <StatusBadge status={mappedBadgeStatus} />
-              <span><Clock3 size={14} /> {elapsed}</span>
+              <span style={{ color: 'var(--text-secondary)' }}><Clock3 size={13} style={{ marginRight: '4px', inlineSize: 'auto' }} /> Duration: {elapsed}</span>
+            </div>
+          </div>
+
+          {/* PRIORITY 3: LARGE MISSION CONTROL HERO HEADER */}
+          <header style={{ borderBottom: '1px solid var(--border)', paddingBottom: '20px' }}>
+            <span className="eyebrow" style={{ color: 'var(--text-muted)', fontSize: '10px', letterSpacing: '0.08em', marginBottom: '6px' }}>
+              AUTONOMOUS AGENT INVESTIGATION
+            </span>
+            <h1 style={{ fontSize: 'clamp(24px, 4vw, 36px)', fontWeight: 800, letterSpacing: '-0.04em', margin: '0 0 10px 0', lineHeight: 1.15 }}>
+              {data?.snapshot?.final_result && runStatus !== 'Running' 
+                ? data.snapshot.final_result 
+                : 'AI Agent is actively searching workspace...'}
+            </h1>
+            
+            {/* Target App Server info */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+              <span>Target App: <strong style={{ color: 'var(--text)' }}>Todo App</strong></span>
+              <span style={{ color: 'var(--border)' }}>|</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <ExternalLink size={12} /> URL: <code>http://localhost:5173</code>
+              </span>
             </div>
           </header>
 
-          <section className="run-context-grid" aria-label="Run context">
-            <div><span>Target</span><strong>Todo App</strong></div>
-            <div className="context-issue"><span>Pipeline result</span><strong>{data?.snapshot?.final_result ?? 'In progress'}</strong></div>
-            <div><span>Current stage</span><strong>{activeStage.name}</strong></div>
-          </section>
+          {/* Mobile responsive progress rail */}
+          <MobilePipeline 
+            stages={stages} 
+            selectedStageId={currentStageId}
+            onSelectStage={setSelectedStageId}
+          />
 
-          <MobilePipeline stages={stages} />
-
-          <section className="dashboard-content">
-            <article className="focus-panel">
-              <div className="panel-heading" style={{ marginBottom: '16px' }}>
-                <div><p className="eyebrow"><Radio size={13} className={runStatus === 'Running' ? 'pulsing-icon' : ''} /> {runStatus === 'Running' ? 'Active investigation stage' : 'Investigation result'}</p><h2>{activeStage.name}</h2></div>
-                <StatusBadge status={activeStage.status} />
+          {/* Primary Split View: Visual Evidence Focus on the Left, Context Metrics & Event Log on Right */}
+          <section className="dashboard-content" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(280px, 0.6fr)', gap: '20px' }}>
+            
+            {/* Focal Evidence Area */}
+            <article className="focus-panel" style={{ padding: '24px', minHeight: '420px', border: `1px solid ${stageColors[displayedStage.id]}33` }}>
+              <div className="panel-heading" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <p className="eyebrow" style={{ color: stageColors[displayedStage.id] }}>
+                    <Radio size={13} className={displayedStage.status === 'running' ? 'pulsing-icon' : ''} /> 
+                    {displayedStage.status === 'running' ? 'CURRENT PIPELINE STAGE' : 'STAGE SNAPSHOT EVIDENCE'}
+                  </p>
+                  <h2 style={{ fontSize: '22px', fontWeight: 800, margin: '4px 0 0 0', letterSpacing: '-0.02em' }}>{displayedStage.name}</h2>
+                </div>
+                <StatusBadge status={displayedStage.status} />
               </div>
 
+              {/* Progressive Data Canvas */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {activeStage.id === 'explorer' && (
+                {displayedStage.id === 'explorer' && (
                   <ExplorerVisualizer data={data?.snapshot?.explorer_snapshot} />
                 )}
-                {activeStage.id === 'mapper' && (
+                {displayedStage.id === 'mapper' && (
                   <SourceMapperVisualizer data={data?.snapshot?.source_snapshot} />
                 )}
-                {activeStage.id === 'analyzer' && (
+                {displayedStage.id === 'analyzer' && (
                   <AnalyzerVisualizer data={data?.snapshot?.analysis_snapshot} />
                 )}
-                {activeStage.id === 'repair' && (
+                {displayedStage.id === 'repair' && (
                   <RepairVisualizer data={data?.snapshot?.repair_snapshot} />
                 )}
-                {activeStage.id === 'verifier' && (
+                {displayedStage.id === 'verifier' && (
                   <VerifierVisualizer data={data?.snapshot?.verification_snapshot} />
                 )}
               </div>
             </article>
-            
-            <aside className="side-stack">
-              <article className="panel-card">
-                <div className="panel-heading"><div><p className="eyebrow">Execution trace</p><h3>Pipeline event log</h3></div><FileWarning size={18} /></div>
-                <ol className="event-list">
+
+            {/* Metrics & Logs Column */}
+            <aside className="side-stack" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* Timeline Metrics */}
+              <article className="panel-card" style={{ padding: '16px' }}>
+                <span className="eyebrow" style={{ marginBottom: '10px' }}>PIPELINE SPEED</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {stages.map(st => {
+                    const isActive = st.id === currentStageId
+                    const color = stageColors[st.id]
+                    return (
+                      <div 
+                        key={st.id}
+                        onClick={() => setSelectedStageId(st.id)}
+                        style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center', 
+                          padding: '6px 10px', 
+                          borderRadius: '6px', 
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          background: isActive ? `${color}11` : 'transparent',
+                          border: isActive ? `1px solid ${color}33` : '1px solid transparent',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span style={{ color: isActive ? 'var(--text)' : 'var(--text-secondary)', fontWeight: isActive ? 700 : 500 }}>{st.name}</span>
+                        <code style={{ color: st.duration !== '—' ? color : 'var(--text-muted)' }}>{st.duration}</code>
+                      </div>
+                    )
+                  })}
+                </div>
+              </article>
+
+              {/* Event Logs Trace */}
+              <article className="panel-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                <div className="panel-heading" style={{ marginBottom: '12px' }}>
+                  <div>
+                    <p className="eyebrow">AGENT ACTIVITY TRACE</p>
+                    <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '2px 0 0 0' }}>Workspace Log</h3>
+                  </div>
+                  <FileWarning size={15} style={{ color: 'var(--text-muted)' }} />
+                </div>
+                
+                <ol className="event-list" style={{ margin: 0, overflowY: 'auto', maxHeight: '240px', flex: 1 }}>
                   {(data?.snapshot?.execution_history ?? []).map((entry, i) => (
-                    <li key={i}>
+                    <li key={i} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
                       <span className={`event-dot ${entry.toLowerCase().includes('completed') ? 'complete' : entry.toLowerCase().includes('started') ? 'running' : entry.toLowerCase().includes('failed') || entry.toLowerCase().includes('skipped') ? 'failed' : 'queued'}`} />
-                      {entry} <time>0{i + 1}</time>
+                      <span style={{ flex: 1, color: 'var(--text-secondary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{entry}</span>
+                      <time style={{ fontSize: '9px', color: 'var(--text-muted)' }}>0{i + 1}</time>
                     </li>
                   ))}
                   {(!data?.snapshot?.execution_history?.length) && (
-                    <li><span className="event-dot queued" />Waiting for pipeline events…</li>
+                    <li style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      <span className="event-dot queued" />Waiting for pipeline initialization...
+                    </li>
                   )}
                 </ol>
               </article>
-              <article className="panel-card contract-card">
-                <p className="eyebrow">Stage metrics</p>
-                {Object.entries(data?.snapshot?.stage_metrics ?? {}).map(([stage, duration]) => (
-                  <div key={stage} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    <span>{stage}</span>
-                    <code style={{ color: 'var(--signal-bright)' }}>{duration}s</code>
-                  </div>
-                ))}
-                {!Object.keys(data?.snapshot?.stage_metrics ?? {}).length && (
-                  <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '8px' }}>No metrics yet.</p>
-                )}
-              </article>
+
             </aside>
           </section>
 

@@ -25,3 +25,11 @@ export interface RunFixture {
   elapsed: string
   stages: PipelineStage[]
 }
+
+export const stageColors: Record<string, string> = {
+  explorer: '#06b6d4', // cyan
+  mapper: '#3b82f6',   // blue
+  analyzer: '#f59e0b', // amber
+  repair: '#10b981',   // green
+  verifier: '#34d399', // emerald
+}

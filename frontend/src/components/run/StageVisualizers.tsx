@@ -1,4 +1,5 @@
-import { BrainCircuit, CheckCircle2, Compass, AlertTriangle, Cpu, FileCode, FileSearch, ShieldCheck, Wrench, Terminal, Server, HelpCircle } from 'lucide-react'
+import { useState } from 'react'
+import { BrainCircuit, CheckCircle2, Compass, AlertTriangle, Cpu, FileCode, FileSearch, ShieldCheck, Wrench, Terminal, Server, HelpCircle, Eye } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // Shared visual helpers
@@ -51,15 +52,33 @@ function CodeBlock({ code, filename }: { code: string; filename?: string }) {
 // ---------------------------------------------------------------------------
 
 export function ExplorerVisualizer({ data }: { data: any }) {
+  const [activeScreenshotTab, setActiveScreenshotTab] = useState<'before' | 'after'>('before')
+
   if (!data) return <EmptyState stage="Explorer" />
 
   const summary = data.page_summary || {}
   const evidence = data.runtime_evidence || {}
   const consoleEvents = data.console_events || []
   const networkFailures = data.network_failures || []
+  const screenshots = data.screenshots || []
+
+  const getFullUrl = (path: string) => {
+    if (!path) return ''
+    if (path.startsWith('/') || path.startsWith('http')) {
+      if (path.startsWith('/api')) {
+        return `http://localhost:8000${path}`
+      }
+      return path
+    }
+    return `http://localhost:8000/api/artifacts/${path}`
+  }
+
+  // Find the selected screenshot
+  const selectedScreenshot = screenshots.find((s: any) => s.name === activeScreenshotTab) || screenshots[0]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      
       {/* Target and Metrics Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
         <div className="panel-card" style={{ padding: '14px' }}>
@@ -68,7 +87,7 @@ export function ExplorerVisualizer({ data }: { data: any }) {
         </div>
         <div className="panel-card" style={{ padding: '14px' }}>
           <span className="eyebrow" style={{ fontSize: '9px' }}>Total Interactive Elements</span>
-          <strong style={{ display: 'block', fontSize: '18px', marginTop: '4px', color: 'var(--signal-bright)' }}>{summary.total_interactive_elements || 0}</strong>
+          <strong style={{ display: 'block', fontSize: '18px', marginTop: '4px', color: '#06b6d4' }}>{summary.total_interactive_elements || 0}</strong>
         </div>
         <div className="panel-card" style={{ padding: '14px' }}>
           <span className="eyebrow" style={{ fontSize: '9px' }}>Buttons / Inputs</span>
@@ -78,26 +97,102 @@ export function ExplorerVisualizer({ data }: { data: any }) {
         </div>
       </div>
 
-      {/* DOM Evidence / Observation details */}
-      <div className="investigation-canvas" style={{ gridTemplateColumns: '1fr', padding: '18px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '10px', marginBottom: '10px' }}>
-          <Compass size={18} style={{ color: 'var(--signal-bright)' }} />
-          <span className="eyebrow" style={{ letterSpacing: '0.05em' }}>Runtime Evidence Harvested</span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', fontSize: '13px' }}>
-          <div>
-            <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block', fontWeight: 650 }}>EXPECTED BEHAVIOR</span>
-            <p style={{ margin: '4px 0 12px 0', color: 'var(--text)' }}>{evidence.expected_interaction || 'Clear completed todo items.'}</p>
-            <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block', fontWeight: 650 }}>OBSERVED DOM CHANGE</span>
-            <p style={{ margin: '4px 0 0 0', color: 'var(--danger)' }}>{evidence.observed_dom_change || 'No change detected in active todo items counts.'}</p>
+      {/* Target Screen Capture & Evidences */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+        
+        {/* Dynamic Screen Capture Frame */}
+        <div className="panel-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="eyebrow" style={{ color: '#06b6d4' }}>TARGET STATE SCREENSHOT</span>
+            
+            {screenshots.length > 1 && (
+              <div style={{ display: 'flex', gap: '4px', background: 'var(--surface-muted)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                <button 
+                  onClick={() => setActiveScreenshotTab('before')}
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: 0,
+                    cursor: 'pointer',
+                    background: activeScreenshotTab === 'before' ? 'rgba(255,255,255,0.06)' : 'transparent',
+                    color: activeScreenshotTab === 'before' ? 'var(--text)' : 'var(--text-muted)'
+                  }}
+                >
+                  BEFORE
+                </button>
+                <button 
+                  onClick={() => setActiveScreenshotTab('after')}
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: 0,
+                    cursor: 'pointer',
+                    background: activeScreenshotTab === 'after' ? 'rgba(255,255,255,0.06)' : 'transparent',
+                    color: activeScreenshotTab === 'after' ? 'var(--text)' : 'var(--text-muted)'
+                  }}
+                >
+                  AFTER
+                </button>
+              </div>
+            )}
           </div>
-          <div>
-            <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block', fontWeight: 650 }}>VISUAL OUTCOME</span>
-            <p style={{ margin: '4px 0 12px 0', color: 'var(--text-secondary)' }}>{evidence.observed_visual_change || 'Todo remains visible.'}</p>
-            <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block', fontWeight: 650 }}>STATE ANALYSIS</span>
-            <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)' }}>{evidence.observed_element_state || 'Button was enabled and clickable.'}</p>
+
+          {/* Browser Capture Wrapper */}
+          <div style={{ 
+            position: 'relative', 
+            borderRadius: '8px', 
+            overflow: 'hidden', 
+            border: '1px solid var(--border)',
+            background: '#090a0f',
+            aspectRatio: '4/3',
+            display: 'grid',
+            placeItems: 'center'
+          }}>
+            {selectedScreenshot ? (
+              <>
+                <img 
+                  src={getFullUrl(selectedScreenshot.path)} 
+                  alt={`${selectedScreenshot.name} snapshot`}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+                {/* Active scan line sweep animation overlay */}
+                <div className="scanner-line" />
+              </>
+            ) : (
+              <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '20px' }}>
+                <Eye size={24} style={{ marginBottom: '8px', opacity: 0.3 }} />
+                <span>No screenshots captured</span>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* DOM Evidence / Observation details */}
+        <div className="investigation-canvas" style={{ gridTemplateColumns: '1fr', padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '10px', marginBottom: '10px' }}>
+            <Compass size={18} style={{ color: '#06b6d4' }} />
+            <span className="eyebrow" style={{ letterSpacing: '0.05em', color: '#06b6d4' }}>Runtime Evidence Harvested</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px', display: 'block', fontWeight: 700 }}>EXPECTED BEHAVIOR</span>
+              <p style={{ margin: '4px 0 0 0', color: 'var(--text)' }}>{evidence.expected_interaction || 'Clear completed todo items.'}</p>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px', display: 'block', fontWeight: 700 }}>OBSERVED DOM CHANGE</span>
+              <p style={{ margin: '4px 0 0 0', color: 'var(--danger)' }}>{evidence.observed_dom_change || 'No change detected in active todo items counts.'}</p>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px', display: 'block', fontWeight: 700 }}>VISUAL OUTCOME</span>
+              <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)' }}>{evidence.observed_visual_change || 'Todo remains visible.'}</p>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       {/* Logs and Network failures */}

@@ -66,3 +66,97 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--signal-bright);
     letter-spacing: -0.01em;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   FINAL POLISH MODE — PREMIUM MOTION, LIGHTING, GLOWS & GLASSMORPHISM
+   --------------------------------------------------------------------------- */
+
+/* Custom global scrollbars to match Cursor / Warp IDE styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.06);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+/* Scanning line animation for Explorer screenshot / DOM state */
+@keyframes scan-sweep {
+  0% { top: 0%; opacity: 0; }
+  10% { opacity: 0.8; }
+  90% { opacity: 0.8; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.scanner-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #06b6d4, transparent);
+  box-shadow: 0 0 10px #06b6d4, 0 0 20px rgba(6, 182, 212, 0.5);
+  animation: scan-sweep 3s infinite linear;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Pulse animation for the metrics/active state cards */
+@keyframes active-glow {
+  0% { box-shadow: 0 0 0 0px rgba(139,140,255,0.15); }
+  100% { box-shadow: 0 0 0 6px rgba(139,140,255,0); }
+}
+
+.active-pulse-border {
+  animation: active-glow 1.8s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+
+/* Code block diff highlights */
+pre code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace !important;
+}
+
+/* Premium Card hover lifts */
+.panel-card, .focus-panel {
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+.panel-card:hover {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4) !important;
+  transform: translateY(-1px);
+}
+
+/* Demo switcher active states */
+.demo-controls button {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.demo-controls button:hover:not(.demo-active) {
+  background: rgba(255,255,255,0.02) !important;
+  color: var(--text) !important;
+}
+
+/* Dynamic background lighting nodes */
+@keyframes ambient-float {
+  0% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-10px) scale(1.05); }
+  100% { transform: translateY(0px) scale(1); }
+}
+
+.ambient-light {
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(94, 89, 215, 0.08), transparent 70%);
+  filter: blur(40px);
+  animation: ambient-float 8s infinite ease-in-out;
+  pointer-events: none;
+  z-index: 0;
+}
+
