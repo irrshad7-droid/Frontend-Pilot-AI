@@ -13,23 +13,49 @@ from api.routes import router
 app = FastAPI(title="FrontendPilot AI API")
 
 # ---------------------------------------------------------------------------
-# CORS — Development-only permissive configuration.
-# In production, replace allow_origins with explicit frontend origin(s).
+# CORS — Production-ready configuration.
+# Allows local development and deployed Vercel frontend.
+# Override via CORS_ORIGINS environment variable (comma-separated).
 # ---------------------------------------------------------------------------
+default_origins = [
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:4173",
+    "https://frontend-pilot-ai.vercel.app",
+]
+cors_origins = os.getenv("CORS_ORIGINS", ",".join(default_origins)).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://frontend-pilot-ai.vercel.app",
-    ],
+    allow_origins=[origin.strip() for origin in cors_origins if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 app.include_router(router, prefix="/api")
+
+
+# ---------------------------------------------------------------------------
+# Root health-check / info endpoint
+# ---------------------------------------------------------------------------
+@app.get("/")
+async def root():
+    return {
+        "service": "FrontendPilot AI API",
+        "version": "1.0.0",
+        "status": "healthy",
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+    }
+
 
 @app.on_event("startup")
 def startup_event():
     init_db()
 
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
