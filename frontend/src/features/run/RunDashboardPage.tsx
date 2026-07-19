@@ -1,5 +1,5 @@
 import { ChevronRight, ExternalLink, FileWarning, Radio } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { AppShell } from "../../components/chrome/AppShell";
 import { StageRail } from "../../components/chrome/StageRail";
 import { StatusBadge } from "../../components/data-display/StatusBadge";
@@ -18,48 +18,94 @@ import {
   MobilePipeline,
 } from "../../components/run/SharedRunUtils";
 
+// ---------------------------------------------------------------------------
+// Demo mode: deterministic auto-advance through stages
+// Each "tick" advances one stage to completion
+// ---------------------------------------------------------------------------
+
+type DemoState = "idle" | "running" | "success" | "failed";
+
+const STAGE_ORDER = ["explorer", "mapper", "analyzer", "repair", "verifier"];
+
+const STAGE_DURATIONS: Record<string, number> = {
+  explorer: 4000,  // 4s
+  mapper: 2000,    // 2s
+  analyzer: 5000,  // 5s
+  repair: 3500,    // 3.5s
+  verifier: 4500,  // 4.5s
+};
+
+// Total: ~19s per stage = ~95s for all 5 stages (within 60-90 target for replay,
+// but fast enough for demo — each stage enters "complete" then moves on)
+// Using 1/2 speed for readable presentation: ~45s total
+
 export function RunDashboardPage() {
-  const [demoState, setDemoState] = useState<
-    "Running" | "Verified" | "Rolled back"
-  >("Running");
+  const [demoState, setDemoState] = useState<DemoState>("running");
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  const [completedStages, setCompletedStages] = useState<Set<string>>(new Set());
+  const [currentPipelineStage, setCurrentPipelineStage] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRef = useRef(true);
 
-  const mappedStatus =
-    demoState === "Running"
-      ? "Running"
-      : demoState === "Verified"
-        ? "Success"
-        : "Failed";
+  // Deterministic auto-advance: each stage completes in sequence
+  const advancePipeline = useCallback(() => {
+    if (currentPipelineStage >= STAGE_ORDER.length) {
+      // All stages complete — move to success state
+      setDemoState("success");
+      return;
+    }
 
+    const stageId = STAGE_ORDER[currentPipelineStage];
+    setCompletedStages(prev => new Set(prev).add(stageId));
+
+    // Focus the newly completed stage
+    setSelectedStageId(stageId);
+
+    const nextStage = currentPipelineStage + 1;
+    setCurrentPipelineStage(nextStage);
+
+    // Schedule next stage
+    if (nextStage < STAGE_ORDER.length) {
+      const nextId = STAGE_ORDER[nextStage];
+      const delay = STAGE_DURATIONS[nextId] || 3000;
+      timerRef.current = setTimeout(advancePipeline, delay);
+    } else {
+      // All done
+      timerRef.current = setTimeout(() => setDemoState("success"), 1500);
+    }
+  }, [currentPipelineStage]);
+
+  // Start auto-advance on mount
+  useEffect(() => {
+    if (!autoRef.current) return;
+    // Start with explorer immediately
+    const startDelay = 500;
+    timerRef.current = setTimeout(advancePipeline, startDelay);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [advancePipeline]);
+
+  // Build stage statuses deterministically
   const currentRun = {
     ...demoRun,
-    status: mappedStatus as "Running" | "Success" | "Failed",
+    status: (demoState === "running" ? "Running" : demoState === "success" ? "Success" : "Failed") as "Running" | "Success" | "Failed",
     stages: demoRun.stages.map((stage) => {
-      if (demoState === "Verified")
-        return { ...stage, status: "complete" as const };
-      if (demoState === "Rolled back") {
-        if (stage.id === "verifier")
-          return { ...stage, status: "failed" as const };
-        if (stage.id === "repair" || stage.id === "analyzer")
-          return { ...stage, status: "complete" as const };
+      if (completedStages.has(stage.id)) return { ...stage, status: "complete" as const };
+      if (stage.id === STAGE_ORDER[currentPipelineStage] && demoState === "running") {
+        return { ...stage, status: "running" as const };
       }
-      return stage;
+      return { ...stage, status: "queued" as const };
     }),
   };
 
   const activeStage =
-    currentRun.stages.find((stage) => stage.status === "running") ??
+    currentRun.stages.find((s) => s.status === "running") ??
+    currentRun.stages.find((s) => s.status === "complete" && s.id === selectedStageId) ??
     currentRun.stages[currentRun.stages.length - 1];
   const currentStageId = selectedStageId || activeStage.id;
   const displayedStage =
     currentRun.stages.find((s) => s.id === currentStageId) || activeStage;
-
-  // Sync selected stage if active stage changes and user has not interacted
-  useEffect(() => {
-    if (!selectedStageId) {
-      setSelectedStageId(activeStage.id);
-    }
-  }, [activeStage.id, selectedStageId]);
 
   // Mock snapshots representing the Todo App Clear completed bug lifecycle
   const mockSnapshot = {
@@ -96,6 +142,9 @@ export function RunDashboardPage() {
       screenshots: [
         { name: "before", path: "/api/artifacts/before.png" },
       ],
+      severity: "high",
+      confidence: "High",
+      reported_issue: "\"Clear completed\" does nothing — completed todos remain visible after clicking.",
     },
     source_snapshot: {
       target_observation: "Clear completed button element",
@@ -158,13 +207,20 @@ export function RunDashboardPage() {
     },
     repair_snapshot: {
       target_file: "target-app/src/App.tsx",
+      commit_message: `fix: bind onClick handler to "Clear completed" button\n\nThe button was rendered without an event handler, causing the click\nto silently no-op. This patch wires the handleClearCompleted\nfunction to the onClick prop.`,
+      modification_summary: "Binds onClick={handleClearCompleted} to the existing button element. The handler filters completed todos from state on click.",
       patch_explanation:
         "Binds the Clear completed button onClick handler to trigger handleClearCompleted state filtering.",
       repair_confidence: "High",
       diff: [
         {
           search_block: `<button className="hover:underline hover:text-gray-800 transition-colors">\n  Clear completed\n</button>`,
-          replace_block: `<button \n  onClick={handleClearCompleted}\n  className="hover:underline hover:text-gray-800 transition-colors"\n>\n  Clear completed\n</button>`,
+          replace_block: `<button\n  onClick={handleClearCompleted}\n  className="hover:underline hover:text-gray-800 transition-colors"\n>\n  Clear completed\n</button>`,
+          removed_lines: 3,
+          added_lines: 5,
+          search_start_line: 104,
+          replace_start_line: 104,
+          change_reason: "add onClick handler",
         },
       ],
       repair_risks: [
@@ -173,26 +229,34 @@ export function RunDashboardPage() {
     },
     verification_snapshot: {
       verification_status:
-        demoState === "Verified"
+        demoState === "success"
           ? "Passed"
-          : demoState === "Rolled back"
-            ? "Failed"
-            : "Inconclusive",
+          : "Running",
       pass_fail_reason:
-        demoState === "Verified"
-          ? "All verification assertions passed. Todo item was purged and list height recalculated."
-          : demoState === "Rolled back"
-            ? "Verification failed: assertion timeout on todo list purge."
-            : "Verification pending.",
-      rollback_required: demoState === "Rolled back",
+        demoState === "success"
+          ? "2/2 assertions passed. The completed todo is removed from the DOM after clicking 'Clear completed'."
+          : "Running 2 Playwright assertions...",
+      rollback_required: false,
+      previous_behavior:
+        "Clicking 'Clear completed' preserved completed todos in the DOM. List height did not adjust. No console errors.",
+      current_behavior:
+        "Clicking 'Clear completed' removes all completed todos from the list. List height recalculates. No regressions.",
+      accessibility_status: { violations: 0, passed: 12 },
+      runtime_assertions: [
+        { message: "DOM mutation observed on Clear completed click", passed: true },
+        { message: "Completed todo removed from list", passed: true },
+      ],
+      console_assertions: [
+        { message: "No new console errors introduced", passed: true },
+      ],
       executed_steps: [
         { action: "click", selector: "button:has-text('Clear completed')" },
         { action: "assert_not_visible", selector: ".todo-item.completed" },
       ],
-      regressions_detected:
-        demoState === "Rolled back"
-          ? ["Verification assertion timeout on todo list purge."]
-          : [],
+      regressions_detected: [],
+      screenshots: [
+        { name: "after_patch", path: "/api/artifacts/after.png" },
+      ],
     },
   };
 
@@ -245,62 +309,16 @@ export function RunDashboardPage() {
                 border: "1px solid var(--border)",
               }}
             >
-              <button
-                onClick={() => setDemoState("Running")}
-                className={demoState === "Running" ? "demo-active" : ""}
+              <span
                 style={{
-                  fontSize: "10px",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  color:
-                    demoState === "Running" ? "var(--bg)" : "var(--text-muted)",
-                  background:
-                    demoState === "Running"
-                      ? "var(--signal-bright)"
-                      : "transparent",
+                  fontSize: "9px",
+                  color: "var(--text-muted)",
+                  padding: "4px 6px",
                   fontWeight: 700,
                 }}
               >
-                Running
-              </button>
-              <button
-                onClick={() => setDemoState("Verified")}
-                className={demoState === "Verified" ? "demo-active" : ""}
-                style={{
-                  fontSize: "10px",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  color:
-                    demoState === "Verified"
-                      ? "var(--bg)"
-                      : "var(--text-muted)",
-                  background:
-                    demoState === "Verified" ? "var(--success)" : "transparent",
-                  fontWeight: 700,
-                }}
-              >
-                Verified
-              </button>
-              <button
-                onClick={() => setDemoState("Rolled back")}
-                className={demoState === "Rolled back" ? "demo-active" : ""}
-                style={{
-                  fontSize: "10px",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  color:
-                    demoState === "Rolled back"
-                      ? "var(--bg)"
-                      : "var(--text-muted)",
-                  background:
-                    demoState === "Rolled back"
-                      ? "var(--danger)"
-                      : "transparent",
-                  fontWeight: 700,
-                }}
-              >
-                Rolled back
-              </button>
+                {completedStages.size}/{STAGE_ORDER.length} stages
+              </span>
             </div>
           </div>
 
@@ -320,7 +338,7 @@ export function RunDashboardPage() {
                 marginBottom: "6px",
               }}
             >
-              CURATED HACKATHON DEMO RUN
+              AUTONOMOUS AGENT INVESTIGATION
             </span>
             <h1
               style={{
@@ -332,7 +350,9 @@ export function RunDashboardPage() {
                 textWrap: "balance",
               }}
             >
-              {currentRun.issue}
+              {demoState === "success"
+                ? "Fix confirmed: 'Clear completed' now works correctly"
+                : currentRun.issue}
             </h1>
 
             {/* Target App Server info */}
@@ -441,29 +461,31 @@ export function RunDashboardPage() {
                 }}
               >
                 {displayedStage.id === "explorer" && (
-                  <ExplorerVisualizer data={mockSnapshot.explorer_snapshot} />
+                  <ExplorerVisualizer data={
+                    completedStages.has("explorer") ? mockSnapshot.explorer_snapshot : null
+                  } />
                 )}
                 {displayedStage.id === "mapper" && (
-                  <SourceMapperVisualizer data={mockSnapshot.source_snapshot} />
+                  <SourceMapperVisualizer data={
+                    completedStages.has("mapper") ? mockSnapshot.source_snapshot : null
+                  } />
                 )}
                 {displayedStage.id === "analyzer" && (
-                  <AnalyzerVisualizer data={mockSnapshot.analysis_snapshot} />
+                  <AnalyzerVisualizer data={
+                    completedStages.has("analyzer") ? mockSnapshot.analysis_snapshot : null
+                  } />
                 )}
                 {displayedStage.id === "repair" && (
                   <RepairVisualizer
                     data={
-                      displayedStage.status === "queued"
-                        ? null
-                        : mockSnapshot.repair_snapshot
+                      completedStages.has("repair") ? mockSnapshot.repair_snapshot : null
                     }
                   />
                 )}
                 {displayedStage.id === "verifier" && (
                   <VerifierVisualizer
                     data={
-                      displayedStage.status === "queued"
-                        ? null
-                        : mockSnapshot.verification_snapshot
+                      completedStages.has("verifier") ? mockSnapshot.verification_snapshot : null
                     }
                   />
                 )}
@@ -591,7 +613,7 @@ export function RunDashboardPage() {
                       }}
                     >
                       <span
-                        className={`event-dot ${s.status === "running" ? "running pulse" : s.status === "complete" ? "complete" : s.status === "failed" ? "failed" : "queued"}`}
+                        className={`event-dot ${s.status === "running" ? "running pulse" : s.status === "complete" ? "complete" : "queued"}`}
                       />
                       <span
                         style={{
@@ -602,7 +624,7 @@ export function RunDashboardPage() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {s.name} Stage {s.progress.toLowerCase()}
+                        {s.name} {s.status === "complete" ? "complete" : s.status === "running" ? "in progress" : "queued"}
                       </span>
                       <time
                         style={{ fontSize: "9px", color: "var(--text-muted)" }}
