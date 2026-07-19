@@ -6,7 +6,7 @@
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.139.2-059669?logo=fastapi)](https://fastapi.tiangolo.com)
 [![Python](https://img.shields.io/badge/Python-3.10.13-3776ab?logo=python)](https://python.org)
-[![OpenAI](https://img.shields.io/badge/OpenAI-gpt--4o--2024--08--06-4129af?logo=openai)](https://openai.com)
+[![Gemini](https://img.shields.io/badge/Gemini-2.5--Flash-4285f4?logo=google)](https://ai.google.dev)
 [![Playwright](https://img.shields.io/badge/Playwright-1.61.0-2ead35?logo=playwright)](https://playwright.dev)
 [![Vercel](https://img.shields.io/badge/Frontend-Vercel-black?logo=vercel)](https://frontend-pilot-ai.vercel.app)
 [![Render](https://img.shields.io/badge/Backend-Render-4685ff?logo=render)](https://frontendpilot-ai-api.onrender.com)
@@ -17,11 +17,11 @@
 
 ## Live Links
 
-| Resource | Link |
-|---|---|
-| **Live Demo** | [https://frontend-pilot-ai.vercel.app/](https://frontend-pilot-ai.vercel.app/) |
-| **Backend API** | [https://frontendpilot-ai-api.onrender.com](https://frontendpilot-ai-api.onrender.com) |
-| **API Docs** | [https://frontendpilot-ai-api.onrender.com/docs](https://frontendpilot-ai-api.onrender.com/docs) |
+| Resource              | Link                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Live Demo**         | [https://frontend-pilot-ai.vercel.app/](https://frontend-pilot-ai.vercel.app/)                             |
+| **Backend API**       | [https://frontendpilot-ai-api.onrender.com](https://frontendpilot-ai-api.onrender.com)                     |
+| **API Docs**          | [https://frontendpilot-ai-api.onrender.com/docs](https://frontendpilot-ai-api.onrender.com/docs)           |
 | **GitHub Repository** | [https://github.com/irrshad7-droid/Frontend-Pilot-AI](https://github.com/irrshad7-droid/Frontend-Pilot-AI) |
 
 ---
@@ -31,7 +31,7 @@
 Frontend debugging is fragmented. Developers switch between:
 
 - **Browser DevTools** — for DOM inspection and console errors
-- **Log aggregators** — for runtime traces and network failures  
+- **Log aggregators** — for runtime traces and network failures
 - **AI assistants** — for code suggestions and explanations
 - **Source code** — to understand and fix the actual bug
 
@@ -48,23 +48,23 @@ flowchart LR
     subgraph Explorer
         E[Playwright<br/>Runtime Evidence]
     end
-    
+
     subgraph SourceMapper
         SM[Tree-sitter<br/>AST Mapping]
     end
-    
+
     subgraph Analyzer
         A[LLM Reasoning<br/>Root Cause]
     end
-    
+
     subgraph Repair
         R[LLM Generation<br/>Surgical Patch]
     end
-    
+
     subgraph Verifier
         V[Playwright<br/>Verification]
     end
-    
+
     E --> SM --> A --> R --> V
     V -->|Passed| PR[Patch Retained]
     V -->|Failed| RB[Git Rollback]
@@ -83,16 +83,16 @@ flowchart LR
 
 ## Features
 
-| Feature | Description | Status |
-|---|---|---|
-| **Autonomous Pipeline** | End-to-end bug detection to fix without human intervention | ✅ Implemented |
-| **Runtime Evidence Capture** | DOM snapshots, console logs, network failures, screenshots | ✅ Implemented |
-| **AST-based Source Mapping** | Tree-sitter parses TypeScript/JSX to locate bug sources | ✅ Implemented |
-| **LLM Root Cause Analysis** | Competing hypotheses with confidence scoring | ✅ Implemented |
-| **Surgical Patch Generation** | Search/replace diffs with syntax validation | ✅ Implemented |
-| **Automated Verification** | Playwright re-runs to confirm fix, auto-rollback on failure | ✅ Implemented |
-| **Live Dashboard** | Real-time pipeline visualization with stage inspectors | ✅ Implemented |
-| **Swagger/OpenAPI Docs** | Interactive API documentation | ✅ Implemented |
+| Feature                       | Description                                                 | Status         |
+| ----------------------------- | ----------------------------------------------------------- | -------------- |
+| **Autonomous Pipeline**       | End-to-end bug detection to fix without human intervention  | ✅ Implemented |
+| **Runtime Evidence Capture**  | DOM snapshots, console logs, network failures, screenshots  | ✅ Implemented |
+| **AST-based Source Mapping**  | Tree-sitter parses TypeScript/JSX to locate bug sources     | ✅ Implemented |
+| **LLM Root Cause Analysis**   | Competing hypotheses with confidence scoring                | ✅ Implemented |
+| **Surgical Patch Generation** | Search/replace diffs with syntax validation                 | ✅ Implemented |
+| **Automated Verification**    | Playwright re-runs to confirm fix, auto-rollback on failure | ✅ Implemented |
+| **Live Dashboard**            | Real-time pipeline visualization with stage inspectors      | ✅ Implemented |
+| **Swagger/OpenAPI Docs**      | Interactive API documentation                               | ✅ Implemented |
 
 ---
 
@@ -104,30 +104,30 @@ flowchart TB
         UI[React + TypeScript<br/>Vite]
         API_CLIENT[API Client]
     end
-    
+
     subgraph Backend["Backend (Render)"]
         API[FastAPI<br/>main.py]
         ROUTER[API Router<br/>/api]
         ORCH[Orchestrator]
-        
+
         subgraph Agents["AI Agents"]
             EX[Explorer<br/>playwright]
             SM[Source Mapper<br/>tree-sitter]
-            AN[Analyzer<br/>openai]
-            RE[Repair<br/>openai]
+            AN[Analyzer<br/>gemini]
+            RE[Repair<br/>gemini]
             VE[Verifier<br/>playwright]
         end
-        
+
         subgraph Storage["Storage"]
             DB[(SQLite<br/>pilot.db)]
             ARTIFACTS[(Artifacts<br/>screenshots)]
         end
     end
-    
+
     subgraph Target["Target Application"]
         TARGET_APP[React Todo App<br/>target-app/]
     end
-    
+
     UI --> API_CLIENT
     API_CLIENT --> API
     API --> ORCH
@@ -155,25 +155,25 @@ sequenceDiagram
     participant A as Analyzer
     participant R as Repair
     participant V as Verifier
-    
+
     U->>API: POST /api/workflow/start
     API->>E: Launch Playwright
     E->>E: Navigate + Interact
     E->>E: Capture Evidence
     E-->>API: ExplorerSnapshot
-    
+
     API->>SM: Parse AST
     SM-->>API: SourceSnapshot
-    
+
     API->>A: LLM Analysis
     A-->>API: AnalysisSnapshot
-    
+
     API->>R: Generate Patch
     R-->>API: RepairSnapshot
-    
+
     API->>V: Verify Fix
     V-->>API: VerificationSnapshot
-    
+
     API-->>U: PipelineExecutionSnapshot
 ```
 
@@ -183,25 +183,25 @@ sequenceDiagram
 
 > Screenshots are placeholders. Replace with actual images in `docs/images/`
 
-| Landing | Explorer | Analyzer |
-|---|---|---|
+| Landing                             | Explorer                              | Analyzer                              |
+| ----------------------------------- | ------------------------------------- | ------------------------------------- |
 | ![Landing](docs/images/landing.png) | ![Explorer](docs/images/explorer.png) | ![Analyzer](docs/images/analyzer.png) |
 
-| Repair | Verification | Mission Control |
-|---|---|---|
+| Repair                            | Verification                                  | Mission Control                                     |
+| --------------------------------- | --------------------------------------------- | --------------------------------------------------- |
 | ![Repair](docs/images/repair.png) | ![Verification](docs/images/verification.png) | ![Mission Control](docs/images/mission-control.png) |
 
 ---
 
 ## Technology Stack
 
-| Layer | Technology |
-|---|---|
-| **Frontend** | React, TypeScript, Vite, Tailwind CSS |
-| **Backend** | FastAPI, Python 3.10, Uvicorn |
-| **AI** | OpenAI GPT-4o, Beta Chat Completions Parse |
-| **Automation** | Playwright, Tree-sitter, GitPython |
-| **Deployment** | Vercel (Frontend), Render (Backend) |
+| Layer          | Technology                            |
+| -------------- | ------------------------------------- |
+| **Frontend**   | React, TypeScript, Vite, Tailwind CSS |
+| **Backend**    | FastAPI, Python 3.10, Uvicorn         |
+| **AI**         | Google Gemini 2.5 Flash               |
+| **Automation** | Playwright, Tree-sitter, GitPython    |
+| **Deployment** | Vercel (Frontend), Render (Backend)   |
 
 ---
 
@@ -254,7 +254,7 @@ Frontend-Pilot-AI/
 
 - Python 3.10+
 - Node.js 18+
-- OpenAI API key
+- Google Gemini API key
 
 ### Backend
 
@@ -263,8 +263,10 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-playwright install chromium
+PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium
 ```
+
+> **Note:** For Render deployment, `PLAYWRIGHT_BROWSERS_PATH=0` installs browsers in the application directory.
 
 ### Frontend
 
@@ -279,11 +281,12 @@ Create `backend/.env`:
 
 ```bash
 # Required
-OPENAI_API_KEY=sk-your-key-here
+GOOGLE_API_KEY=your-gemini-api-key
 
 # Optional
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-3.5-flash
 TARGET_APP_URL=http://localhost:5173
-OPENAI_MODEL=gpt-4o-2024-08-06
 CORS_ORIGINS=http://localhost:5173,http://localhost:4173,https://frontend-pilot-ai.vercel.app
 ```
 
@@ -326,14 +329,20 @@ services:
     runtime: python
     region: ohio
     plan: free
-    buildCommand: pip install -r requirements.txt && playwright install chromium
+    buildCommand: pip install -r requirements.txt && pip install playwright && PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium --with-deps
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     rootDir: backend
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.13
-      - key: OPENAI_API_KEY
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: 0
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GOOGLE_API_KEY
         sync: false
+      - key: LLM_MODEL
+        value: gemini-3.5-flash
       - key: TARGET_APP_URL
         sync: false
       - key: CORS_ORIGINS
@@ -342,38 +351,43 @@ services:
 
 Or manual configuration:
 
-| Setting | Value |
-|---|---|
-| **Root Directory** | `backend` |
-| **Build Command** | `pip install -r requirements.txt && playwright install chromium` |
-| **Start Command** | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
-| **Python Version** | `3.10.13` |
+| Setting            | Value                                                                                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Root Directory** | `backend`                                                                                                                         |
+| **Build Command**  | `pip install -r requirements.txt && pip install playwright && PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium --with-deps` |
+| **Start Command**  | `uvicorn main:app --host 0.0.0.0 --port $PORT`                                                                                    |
+| **Python Version** | `3.10.13`                                                                                                                         |
 
 **Required Environment Variables on Render:**
 
-| Variable | Description |
-|---|---|
-| `OPENAI_API_KEY` | Your OpenAI API key |
-| `TARGET_APP_URL` | URL of the deployed target app |
-| `CORS_ORIGINS` | Comma-separated allowed origins |
+| Variable         | Description                     |
+| ---------------- | ------------------------------- |
+| `GOOGLE_API_KEY` | Your Google Gemini API key      |
+| `TARGET_APP_URL` | URL of the deployed target app  |
+| `CORS_ORIGINS`   | Comma-separated allowed origins |
 
 ---
 
 ## Challenges
 
 ### 1. Playwright on Render
-Playwright requires browser binaries. The build command `playwright install chromium` downloads the necessary dependencies during deployment.
+
+Playwright requires browser binaries. The build command `PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium --with-deps` installs browsers in the application directory and handles system dependencies.
 
 ### 2. Tree-sitter AST Parsing
+
 Mapping runtime DOM elements to source code required custom Tree-sitter queries to identify JSX elements, their parent components, and line numbers.
 
 ### 3. LLM Structured Output
-Using OpenAI's beta `chat.completions.parse` with Pydantic models ensures type-safe patch generation, but requires careful prompt engineering to avoid markdown formatting in diffs.
+
+Using Google Gemini's `response_schema` with Pydantic models ensures type-safe patch generation, but requires careful prompt engineering to avoid markdown formatting in diffs.
 
 ### 4. Git Rollback Safety
+
 The repair agent uses GitPython for atomic rollbacks when patches fail validation, ensuring the target app never remains in a broken state.
 
 ### 5. CORS for Local Development
+
 The backend must allow both localhost (for development) and Vercel (for production) origins, configurable via `CORS_ORIGINS` environment variable.
 
 ---
