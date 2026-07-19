@@ -10,7 +10,7 @@ logger = structlog.get_logger()
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash-lite")
 
 
 class LLMError(Exception):
