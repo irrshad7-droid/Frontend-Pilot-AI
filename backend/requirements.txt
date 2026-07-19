@@ -11,8 +11,8 @@ pydantic-core==2.46.4
 # HTTP client
 httpx==0.28.1
 
-# OpenAI
-openai==2.45.0
+# Google Gemini
+google-genai==1.16.0
 
 # Playwright (browser automation)
 playwright==1.61.0

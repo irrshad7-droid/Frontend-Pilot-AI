@@ -3,24 +3,19 @@ import sys
 import json
 import asyncio
 from typing import Optional
-from openai import AsyncOpenAI
 import structlog
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from core.schemas import ExplorerSnapshot, SourceSnapshot, AnalysisSnapshot
+from core.llm_provider import call_llm, LLMError
 
 logger = structlog.get_logger()
-
-# Optional: configure model from env
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-2024-08-06")
 
 async def analyze_failure(explorer_snapshot: ExplorerSnapshot, source_snapshot: SourceSnapshot) -> AnalysisSnapshot:
     """
     Analyzes the failure by combining Explorer evidence with Source Mapper candidates.
     Outputs a structured AnalysisSnapshot predicting the root cause.
     """
-    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    
     # We serialize the snapshots to JSON, stripping out giant unneeded fields if necessary.
     # In this case, ExplorerSnapshot and SourceSnapshot are already heavily curated by the pipeline.
     
@@ -52,24 +47,13 @@ SOURCE CANDIDATES (SourceSnapshot):
 Analyze this failure and return the structured AnalysisSnapshot.
 """
 
-    logger.info("requesting_analysis_from_llm", model=OPENAI_MODEL)
+    logger.info("requesting_analysis_from_llm")
     
     try:
-        # Note: The OpenAI Python SDK specifically requires the Chat Completions API
-        # via client.beta.chat.completions.parse() in order to enforce Structured Outputs 
-        # using Pydantic schemas. A distinct "Responses API" does not exist in the SDK 
-        # for Pydantic parsing.
-        completion = await client.beta.chat.completions.parse(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format=AnalysisSnapshot,
-            temperature=0.0
-        )
-        
-        return completion.choices[0].message.parsed
+        return await call_llm(system_prompt, user_prompt, AnalysisSnapshot)
+    except LLMError as e:
+        logger.error("analysis_failed", error=str(e), provider=e.provider, error_type=e.error_type)
+        raise
     except Exception as e:
         logger.error("analysis_failed", error=str(e))
         raise

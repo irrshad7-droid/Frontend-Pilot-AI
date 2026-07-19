@@ -12,11 +12,13 @@ services:
         value: 3.10.13
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: 0
-      - key: CORS_ORIGINS
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GOOGLE_API_KEY
         sync: false
-      - key: OPENAI_API_KEY
+      - key: LLM_MODEL
+        value: gemini-2.5-flash
+      - key: CORS_ORIGINS
         sync: false
       - key: TARGET_APP_URL
         sync: false
-      - key: OPENAI_MODEL
-        value: gpt-4o-2024-08-06

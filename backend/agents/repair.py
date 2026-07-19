@@ -5,14 +5,13 @@ import asyncio
 import hashlib
 import subprocess
 from typing import Optional, List
-from openai import AsyncOpenAI
 import structlog
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from core.schemas import AnalysisSnapshot, RepairSnapshot, DiffBlock
+from core.llm_provider import call_llm, LLMError
 
 logger = structlog.get_logger()
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-2024-08-06")
 
 class PatchValidationError(Exception):
     pass
@@ -83,7 +82,7 @@ def apply_patch_with_rollback(target_file: str, diffs: List[DiffBlock]) -> bool:
         # Automatic Rollback
         try:
             import git
-            repo = git.Repo(os.path.dirname(os.path.dirname(target_file)), search_parent_directories=True)
+            repo = git.Repo(os.path.dirname(os.path.dirname(file_path)), search_parent_directories=True)
             repo.git.checkout('--', target_file)
             logger.info("git_rollback_successful", file=target_file)
         except Exception as e:
@@ -98,8 +97,6 @@ async def generate_repair(analysis: AnalysisSnapshot) -> RepairSnapshot:
     """
     Takes the AnalysisSnapshot and generates a surgical patch using Codex.
     """
-    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    
     repair_ctx = analysis.repair_context
             
     system_prompt = """You are the Principal Software Engineer (Codex Repair Agent) for FrontendPilot AI.
@@ -127,20 +124,13 @@ TARGET CONTEXT SNIPPETS:
 Generate the required RepairSnapshot to fix this issue.
 """
 
-    logger.info("requesting_repair_from_llm", model=OPENAI_MODEL)
+    logger.info("requesting_repair_from_llm")
     
     try:
-        completion = await client.beta.chat.completions.parse(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format=RepairSnapshot,
-            temperature=0.0
-        )
-        
-        return completion.choices[0].message.parsed
+        return await call_llm(system_prompt, user_prompt, RepairSnapshot)
+    except LLMError as e:
+        logger.error("repair_generation_failed", error=str(e), provider=e.provider, error_type=e.error_type)
+        raise
     except Exception as e:
         logger.error("repair_generation_failed", error=str(e))
         raise
