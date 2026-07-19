@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-19T20:20:00Z",
+  "title": "Design System: FrontendPilot AI Design System",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Signal Purple", "canonical": "oklch(65% 0.17 280)" },
+      "primary-bright": { "role": "primary", "displayName": "Signal Bright", "canonical": "oklch(75% 0.12 280)" },
+      "neutral-bg": { "role": "neutral", "displayName": "Deep Void", "canonical": "oklch(6% 0.01 280)" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Main headers and targets only." },
+      "body": { "displayName": "Body", "purpose": "General dashboard log textual strings." }
+    },
+    "shadows": [
+      { "name": "tactile-hover-lift", "value": "0 12px 40px rgba(0,0,0,0.4)", "purpose": "Card component micro-interactions." }
+    ],
+    "motion": [
+      { "name": "pulse-ring", "value": "pulse-ring 2s infinite cubic-bezier(0.66, 0, 0, 1)", "purpose": "Active agent loader states." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Standard high-contrast primary CTA.",
+      "html": "<button class=\"ds-btn-primary\">Get Started</button>",
+      "css": ".ds-btn-primary { background: #b2b3ff; color: #0c0d12; padding: 12px 17px; font-weight: 750; border: 1px solid rgba(178,179,255,0.5); border-radius: 11px; font-family: Inter, sans-serif; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; } .ds-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(139,140,255,0.26); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Command Deck",
+    "overview": "The Command Deck is a dark, precise, and surgical design language. It uses deep contrasts, custom neon overlays, and color-coded signals to present pipeline snapshots cleanly.",
+    "keyCharacteristics": [
+      "Deep Contrast Fields",
+      "Stage-Specific Accents",
+      "Active Sweep Animations"
+    ],
+    "rules": [
+      { "name": "The Stage Identity Rule", "body": "Each agent stage must exclusively use its assigned branding accent.", "section": "colors" }
+    ],
+    "dos": [
+      "Do wrap code diff modifications in distinct search/replace blocks.",
+      "Do show active browser screenshot mockups with scanning sweeps."
+    ],
+    "donts": [
+      "Don't use border-left stripe accents greater than 1px.",
+      "Don't use rounded radii greater than 24px."
+    ]
+  }
+}
