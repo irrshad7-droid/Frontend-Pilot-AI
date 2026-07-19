@@ -1,6 +1,7 @@
 import os
 import sys
 import uvicorn
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,6 +10,9 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from database import init_db
 from api.routes import router
+from core.llm_provider import LLM_PROVIDER, LLM_MODEL
+
+logger = structlog.get_logger()
 
 app = FastAPI(title="FrontendPilot AI API")
 
@@ -54,6 +58,7 @@ async def root():
 @app.on_event("startup")
 def startup_event():
     init_db()
+    logger.info("Starting LLM provider", provider=LLM_PROVIDER, model=LLM_MODEL)
 
 
 if __name__ == "__main__":
