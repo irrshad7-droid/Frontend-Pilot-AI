@@ -1,10 +1,11 @@
-import { ChevronRight, Clock3, ExternalLink, FileWarning, Radio, ScanSearch, AlertTriangle, Loader2 } from 'lucide-react'
+import { ChevronRight, Clock3, ExternalLink, FileWarning, Radio, AlertTriangle, Loader2 } from 'lucide-react'
 import { AppShell } from '../../components/chrome/AppShell'
 import { StageRail } from '../../components/chrome/StageRail'
 import { StatusBadge } from '../../components/data-display/StatusBadge'
 import { usePipelineRun } from '../../hooks/usePipelineRun'
 import type { PipelineStage, StageStatus } from '../../types/pipeline'
 import type { PipelineSnapshot } from '../../api/pipeline'
+import { ExplorerVisualizer, SourceMapperVisualizer, AnalyzerVisualizer, RepairVisualizer, VerifierVisualizer } from '../../components/run/StageVisualizers'
 
 // ---------------------------------------------------------------------------
 // Helpers — derive stage data from real PipelineExecutionSnapshot
@@ -286,28 +287,28 @@ export function LiveRunDashboardPage({ runId }: Props) {
 
           <section className="dashboard-content">
             <article className="focus-panel">
-              <div className="panel-heading">
+              <div className="panel-heading" style={{ marginBottom: '16px' }}>
                 <div><p className="eyebrow"><Radio size={13} className={runStatus === 'Running' ? 'pulsing-icon' : ''} /> {runStatus === 'Running' ? 'Active investigation stage' : 'Investigation result'}</p><h2>{activeStage.name}</h2></div>
                 <StatusBadge status={activeStage.status} />
               </div>
-              <p className="focus-summary">{activeStage.summary || 'Waiting for stage data…'}</p>
-              
-              {activeStage.facts.length > 0 && (
-                <div className="investigation-canvas">
-                  <div className="canvas-root-cause">
-                    <ScanSearch size={20} />
-                    <span>Evidence convergence</span>
-                    <strong>{activeStage.insight || '—'}</strong>
-                  </div>
-                  <ol className="hypothesis-list">
-                    {activeStage.facts.map((fact, index) => (
-                      <li className={index === 0 ? 'favored-hypothesis' : ''} key={fact}>
-                        <span>{index + 1}</span>{fact}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {activeStage.id === 'explorer' && (
+                  <ExplorerVisualizer data={data?.snapshot?.explorer_snapshot} />
+                )}
+                {activeStage.id === 'mapper' && (
+                  <SourceMapperVisualizer data={data?.snapshot?.source_snapshot} />
+                )}
+                {activeStage.id === 'analyzer' && (
+                  <AnalyzerVisualizer data={data?.snapshot?.analysis_snapshot} />
+                )}
+                {activeStage.id === 'repair' && (
+                  <RepairVisualizer data={data?.snapshot?.repair_snapshot} />
+                )}
+                {activeStage.id === 'verifier' && (
+                  <VerifierVisualizer data={data?.snapshot?.verification_snapshot} />
+                )}
+              </div>
             </article>
             
             <aside className="side-stack">
