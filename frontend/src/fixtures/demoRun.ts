@@ -4,7 +4,7 @@ export const demoRun: RunFixture = {
   id: 'run_demo_017',
   targetName: 'Todo App',
   targetUrl: 'http://localhost:5173',
-  issue: '“Clear completed” does nothing.',
+  issue: '"Clear completed" does nothing.',
   observedBehavior: 'A completed todo remains visible after Clear completed is clicked.',
   status: 'Running',
   startedAt: 'Just now',

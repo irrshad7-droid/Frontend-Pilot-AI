@@ -13,47 +13,103 @@ import {
   Server,
   HelpCircle,
   Eye,
+  Search,
+  Target,
+  Accessibility,
+  Code2,
+  Bug,
+  Check,
+  X,
+  GitCommit,
+  FileDiff,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
-// Shared visual helpers
+// Shared helpers
 // ---------------------------------------------------------------------------
+
+function SeverityBadge({
+  level,
+}: {
+  level: "critical" | "high" | "medium" | "low";
+}) {
+  const m: Record<string, { color: string; bg: string; border: string }> = {
+    critical: {
+      color: "#ef4444",
+      bg: "rgba(239,68,68,0.08)",
+      border: "rgba(239,68,68,0.25)",
+    },
+    high: {
+      color: "#f59e0b",
+      bg: "rgba(245,158,11,0.08)",
+      border: "rgba(245,158,11,0.25)",
+    },
+    medium: {
+      color: "#3b82f6",
+      bg: "rgba(59,130,246,0.08)",
+      border: "rgba(59,130,246,0.25)",
+    },
+    low: {
+      color: "#6b7280",
+      bg: "rgba(107,114,128,0.08)",
+      border: "rgba(107,114,128,0.25)",
+    },
+  };
+  const s = m[level] || m.medium;
+  return (
+    <span
+      style={{
+        padding: "2px 8px",
+        borderRadius: "4px",
+        fontSize: "9px",
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.05em",
+        color: s.color,
+        backgroundColor: s.bg,
+        border: `1px solid ${s.border}`,
+      }}
+    >
+      {level}
+    </span>
+  );
+}
 
 function ConfidenceBadge({
   level,
 }: {
   level: "High" | "Medium" | "Low" | string;
 }) {
-  const colors = {
+  const m: Record<string, { border: string; text: string; bg: string }> = {
     High: {
-      border: "rgba(16, 185, 129, 0.2)",
+      border: "rgba(16,185,129,0.2)",
       text: "#10b981",
-      bg: "rgba(16, 185, 129, 0.06)",
+      bg: "rgba(16,185,129,0.06)",
     },
     Medium: {
-      border: "rgba(245, 158, 11, 0.2)",
+      border: "rgba(245,158,11,0.2)",
       text: "#f59e0b",
-      bg: "rgba(245, 158, 11, 0.06)",
+      bg: "rgba(245,158,11,0.06)",
     },
     Low: {
-      border: "rgba(239, 68, 68, 0.2)",
+      border: "rgba(239,68,68,0.2)",
       text: "#ef4444",
-      bg: "rgba(239, 68, 68, 0.06)",
+      bg: "rgba(239,68,68,0.06)",
     },
-  }[level as "High" | "Medium" | "Low"] || {
+  };
+  const c = m[level as "High" | "Medium" | "Low"] || {
     border: "var(--border)",
     text: "var(--text-secondary)",
     bg: "var(--surface-muted)",
   };
-
   return (
     <span
       style={{
         padding: "3px 8px",
         borderRadius: "999px",
-        border: `1px solid ${colors.border}`,
-        color: colors.text,
-        backgroundColor: colors.bg,
+        border: `1px solid ${c.border}`,
+        color: c.text,
+        backgroundColor: c.bg,
         fontSize: "10px",
         fontWeight: 700,
         textTransform: "uppercase",
@@ -112,14 +168,63 @@ function CodeBlock({ code, filename }: { code: string; filename?: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Stage Purpose Banner
+// ---------------------------------------------------------------------------
+
+function StagePurposeBanner({
+  stageId,
+  purpose,
+}: {
+  stageId: string;
+  purpose: string;
+}) {
+  const labels: Record<string, { label: string; icon: React.ReactNode }> = {
+    explorer: { label: "What happened?", icon: <Eye size={14} /> },
+    mapper: { label: "Where is the bug?", icon: <Search size={14} /> },
+    analyzer: { label: "Why did it happen?", icon: <BrainCircuit size={14} /> },
+    repair: { label: "How do we fix it?", icon: <Wrench size={14} /> },
+    verifier: { label: "Did the fix work?", icon: <ShieldCheck size={14} /> },
+  };
+  const info = labels[stageId] || {
+    label: "Investigating...",
+    icon: <HelpCircle size={14} />,
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "10px",
+        padding: "12px 14px",
+        borderRadius: "8px",
+        background: "rgba(139,140,255,0.04)",
+        border: "1px solid rgba(139,140,255,0.12)",
+        fontSize: "12px",
+        lineHeight: "1.5",
+        color: "var(--text-secondary)",
+      }}
+    >
+      <span style={{ color: "var(--signal-bright)", marginTop: "1px" }}>
+        {info.icon}
+      </span>
+      <div>
+        <strong style={{ color: "var(--text)", fontSize: "11px" }}>
+          {info.label}
+        </strong>
+        <p style={{ margin: "2px 0 0 0", color: "var(--text-muted)" }}>
+          {purpose}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 1. Explorer Visualizer
 // ---------------------------------------------------------------------------
 
 export function ExplorerVisualizer({ data }: { data: any }) {
-  const [activeScreenshotTab, setActiveScreenshotTab] = useState<
-    "before" | "after"
-  >("before");
-
   if (!data) return <EmptyState stage="Explorer" />;
 
   const summary = data.page_summary || {};
@@ -127,30 +232,66 @@ export function ExplorerVisualizer({ data }: { data: any }) {
   const consoleEvents = data.console_events || [];
   const networkFailures = data.network_failures || [];
   const screenshots = data.screenshots || [];
+  const navigationFlow = data.navigation_flow || [];
+  const severity: string = data.severity || "high";
 
-  const getFullUrl = (path: string) => {
-    if (!path) return "";
-    if (path.startsWith("/") || path.startsWith("http")) {
-      if (path.startsWith("/api")) {
-        return `http://localhost:8000${path}`;
-      }
-      return path;
-    }
-    return `http://localhost:8000/api/artifacts/${path}`;
+  const getFullUrl = (p: string) => {
+    if (!p) return "";
+    if (p.startsWith("/api")) return `http://localhost:8000${p}`;
+    return p;
   };
 
-  // Find the selected screenshot
-  const selectedScreenshot =
-    screenshots.find((s: any) => s.name === activeScreenshotTab) ||
-    screenshots[0];
+  const screenshot = screenshots[0];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <StagePurposeBanner
+        stageId="explorer"
+        purpose="The agent launches Playwright, navigates to the target app, and replays the reported bug scenario to capture runtime state."
+      />
+
+      {/* Bug Report Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          padding: "12px 14px",
+          borderRadius: "8px",
+          background: "rgba(239,68,68,0.04)",
+          border: "1px solid rgba(239,68,68,0.15)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <Bug size={16} style={{ color: "#ef4444", flexShrink: 0 }} />
+          <div>
+            <span
+              style={{
+                fontSize: "9px",
+                fontWeight: 700,
+                color: "var(--text-muted)",
+                letterSpacing: "0.05em",
+              }}
+            >
+              REPORTED ISSUE
+            </span>
+            <p style={{ margin: "2px 0 0", fontSize: "13px", color: "var(--text)" }}>
+              {data.reported_issue || evidence.expected_interaction || "Clear completed does nothing."}
+            </p>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          <SeverityBadge level={severity as any} />
+          <ConfidenceBadge level={data.confidence || "High"} />
+        </div>
+      </div>
+
       {/* Target and Metrics Grid */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))",
           gap: "12px",
         }}
       >
@@ -171,7 +312,7 @@ export function ExplorerVisualizer({ data }: { data: any }) {
         </div>
         <div className="panel-card" style={{ padding: "14px" }}>
           <span className="eyebrow" style={{ fontSize: "9px" }}>
-            Total Interactive Elements
+            Interactive Elements
           </span>
           <strong
             style={{
@@ -196,21 +337,19 @@ export function ExplorerVisualizer({ data }: { data: any }) {
               color: "var(--text-secondary)",
             }}
           >
-            {summary.button_count || 0} Buttons · {summary.input_count || 0}{" "}
-            Inputs
+            {summary.button_count || 0} · {summary.input_count || 0}
           </strong>
         </div>
       </div>
 
-      {/* Target Screen Capture & Evidences */}
+      {/* Screenshot + Evidence */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px,1fr))",
           gap: "20px",
         }}
       >
-        {/* Dynamic Screen Capture Frame */}
         <div
           className="panel-card"
           style={{
@@ -220,79 +359,9 @@ export function ExplorerVisualizer({ data }: { data: any }) {
             gap: "12px",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <span className="eyebrow" style={{ color: "#06b6d4" }}>
-              TARGET STATE SCREENSHOT
-            </span>
-
-            {screenshots.length > 1 && (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "4px",
-                  background: "var(--surface-muted)",
-                  padding: "2px",
-                  borderRadius: "6px",
-                  border: "1px solid var(--border)",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setActiveScreenshotTab("before")}
-                  aria-pressed={activeScreenshotTab === "before"}
-                  style={{
-                    fontSize: "9px",
-                    fontWeight: 700,
-                    padding: "3px 8px",
-                    borderRadius: "4px",
-                    border: 0,
-                    cursor: "pointer",
-                    background:
-                      activeScreenshotTab === "before"
-                        ? "rgba(255,255,255,0.06)"
-                        : "transparent",
-                    color:
-                      activeScreenshotTab === "before"
-                        ? "var(--text)"
-                        : "var(--text-muted)",
-                  }}
-                >
-                  BEFORE
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveScreenshotTab("after")}
-                  aria-pressed={activeScreenshotTab === "after"}
-                  style={{
-                    fontSize: "9px",
-                    fontWeight: 700,
-                    padding: "3px 8px",
-                    borderRadius: "4px",
-                    border: 0,
-                    cursor: "pointer",
-                    background:
-                      activeScreenshotTab === "after"
-                        ? "rgba(255,255,255,0.06)"
-                        : "transparent",
-                    color:
-                      activeScreenshotTab === "after"
-                        ? "var(--text)"
-                        : "var(--text-muted)",
-                  }}
-                >
-                  AFTER
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Browser Capture Wrapper */}
+          <span className="eyebrow" style={{ color: "#06b6d4" }}>
+            OBSERVED STATE
+          </span>
           <div
             className="screenshot-radar"
             style={{
@@ -306,90 +375,18 @@ export function ExplorerVisualizer({ data }: { data: any }) {
               placeItems: "center",
             }}
           >
-            {selectedScreenshot ? (
+            {screenshot ? (
               <>
                 <img
-                  src={getFullUrl(selectedScreenshot.path)}
-                  alt={`${selectedScreenshot.name} snapshot`}
+                  src={getFullUrl(screenshot.path)}
+                  alt="Observed application state"
                   style={{
                     width: "100%",
                     height: "100%",
                     objectFit: "contain",
                   }}
                 />
-                {/* Rotating Circular Radar Overlay */}
-                <svg
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    pointerEvents: "none",
-                    opacity: 0.15,
-                  }}
-                  viewBox="0 0 100 100"
-                >
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="45"
-                    fill="none"
-                    stroke="#06b6d4"
-                    strokeWidth="0.3"
-                    strokeDasharray="1 1"
-                  />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="30"
-                    fill="none"
-                    stroke="#06b6d4"
-                    strokeWidth="0.2"
-                  />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="15"
-                    fill="none"
-                    stroke="#06b6d4"
-                    strokeWidth="0.2"
-                  />
-                  <line
-                    x1="50"
-                    y1="5"
-                    x2="50"
-                    y2="95"
-                    stroke="#06b6d4"
-                    strokeWidth="0.2"
-                  />
-                  <line
-                    x1="5"
-                    y1="50"
-                    x2="95"
-                    y2="50"
-                    stroke="#06b6d4"
-                    strokeWidth="0.2"
-                  />
-                  <g
-                    className="radar-sweep-line"
-                    style={{ transformOrigin: "50px 50px" }}
-                  >
-                    <line
-                      x1="50"
-                      y1="50"
-                      x2="50"
-                      y2="5"
-                      stroke="#06b6d4"
-                      strokeWidth="0.6"
-                      opacity="0.8"
-                    />
-                  </g>
-                </svg>
-
-                {/* Active scan line sweep animation overlay */}
                 <div className="scanner-line" />
-
-                {/* Dynamic targeting sights representing coordinate harvesting */}
                 <div
                   className="targeting-ring"
                   style={{ top: "76%", left: "72%" }}
@@ -408,18 +405,70 @@ export function ExplorerVisualizer({ data }: { data: any }) {
                   padding: "20px",
                 }}
               >
-                <Eye size={24} style={{ marginBottom: "8px", opacity: 0.3 }} />
+                <Eye
+                  size={24}
+                  style={{ marginBottom: "8px", opacity: 0.3 }}
+                />
                 <span>No screenshots captured</span>
               </div>
             )}
           </div>
+
+          {navigationFlow.length > 0 && (
+            <div>
+              <span
+                className="eyebrow"
+                style={{ fontSize: "9px", color: "var(--text-muted)" }}
+              >
+                PLAYWRIGHT REPLAY STEPS
+              </span>
+              {navigationFlow.map((step: any, i: number) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "10px",
+                    color: "var(--text-secondary)",
+                    fontFamily: "monospace",
+                    marginTop: "4px",
+                  }}
+                >
+                  <span style={{ color: "#06b6d4", fontSize: "8px" }}>
+                    {i + 1}.
+                  </span>
+                  <span>{step.action}</span>
+                  {step.selector && (
+                    <code
+                      style={{
+                        color: "var(--text-muted)",
+                        fontSize: "9px",
+                        background: "rgba(255,255,255,0.03)",
+                        padding: "1px 4px",
+                        borderRadius: "3px",
+                      }}
+                    >
+                      {step.selector.length > 50
+                        ? step.selector.slice(0, 50) + "…"
+                        : step.selector}
+                    </code>
+                  )}
+                  {step.value && (
+                    <span style={{ color: "var(--text-muted)" }}>
+                      → "{step.value}"
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* DOM Evidence / Observation details */}
+        {/* Runtime Evidence */}
         <div
           className="investigation-canvas"
           style={{
-            gridTemplateColumns: "1fr",
             padding: "18px",
             display: "flex",
             flexDirection: "column",
@@ -433,82 +482,77 @@ export function ExplorerVisualizer({ data }: { data: any }) {
               gap: "8px",
               borderBottom: "1px solid rgba(255,255,255,0.06)",
               paddingBottom: "10px",
-              marginBottom: "10px",
             }}
           >
             <Compass size={18} style={{ color: "#06b6d4" }} />
             <span
               className="eyebrow"
-              style={{ letterSpacing: "0.05em", color: "#06b6d4" }}
+              style={{ color: "#06b6d4" }}
             >
-              Runtime Evidence Harvested
+              RUNTIME EVIDENCE
             </span>
           </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "12px",
-              fontSize: "13px",
-            }}
-          >
-            <div>
-              <span
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: "10px",
-                  display: "block",
-                  fontWeight: 700,
-                }}
-              >
-                EXPECTED BEHAVIOR
-              </span>
-              <p style={{ margin: "4px 0 0 0", color: "var(--text)" }}>
-                {evidence.expected_interaction || "Clear completed todo items."}
-              </p>
-            </div>
-            <div>
-              <span
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: "10px",
-                  display: "block",
-                  fontWeight: 700,
-                }}
-              >
-                OBSERVED DOM CHANGE
-              </span>
-              <p style={{ margin: "4px 0 0 0", color: "var(--danger)" }}>
-                {evidence.observed_dom_change ||
-                  "No change detected in active todo items counts."}
-              </p>
-            </div>
-            <div>
-              <span
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: "10px",
-                  display: "block",
-                  fontWeight: 700,
-                }}
-              >
-                VISUAL OUTCOME
-              </span>
-              <p
-                style={{ margin: "4px 0 0 0", color: "var(--text-secondary)" }}
-              >
-                {evidence.observed_visual_change || "Todo remains visible."}
-              </p>
-            </div>
+
+          <div>
+            <span
+              style={{
+                color: "var(--text-muted)",
+                fontSize: "10px",
+                display: "block",
+                fontWeight: 700,
+              }}
+            >
+              EXPECTED BEHAVIOR
+            </span>
+            <p style={{ margin: "4px 0 0", color: "var(--text)" }}>
+              {evidence.expected_interaction}
+            </p>
+          </div>
+          <div>
+            <span
+              style={{
+                color: "var(--text-muted)",
+                fontSize: "10px",
+                display: "block",
+                fontWeight: 700,
+              }}
+            >
+              OBSERVED DOM CHANGE
+            </span>
+            <p style={{ margin: "4px 0 0", color: "var(--danger)" }}>
+              {evidence.observed_dom_change}
+            </p>
+          </div>
+          <div>
+            <span
+              style={{
+                color: "var(--text-muted)",
+                fontSize: "10px",
+                display: "block",
+                fontWeight: 700,
+              }}
+            >
+              ELEMENT STATE
+            </span>
+            <p
+              style={{
+                margin: "4px 0 0",
+                color: "var(--text-secondary)",
+                fontFamily: "monospace",
+                fontSize: "12px",
+              }}
+            >
+              {evidence.observed_element_state || "Element rendered in DOM"}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Logs and Network failures */}
+      {/* Logs */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px,1fr))",
           gap: "16px",
         }}
       >
@@ -521,9 +565,16 @@ export function ExplorerVisualizer({ data }: { data: any }) {
               marginBottom: "12px",
             }}
           >
-            <Terminal size={14} style={{ color: "var(--text-secondary)" }} />
+            <Terminal
+              size={14}
+              style={{ color: "var(--text-secondary)" }}
+            />
             <h4
-              style={{ margin: 0, fontSize: "13px", letterSpacing: "-0.01em" }}
+              style={{
+                margin: 0,
+                fontSize: "13px",
+                letterSpacing: "-0.01em",
+              }}
             >
               Console Output
             </h4>
@@ -536,7 +587,7 @@ export function ExplorerVisualizer({ data }: { data: any }) {
                 margin: 0,
               }}
             >
-              No console logs recorded.
+              No console output recorded during replay.
             </p>
           ) : (
             <div
@@ -580,9 +631,16 @@ export function ExplorerVisualizer({ data }: { data: any }) {
               marginBottom: "12px",
             }}
           >
-            <Server size={14} style={{ color: "var(--text-secondary)" }} />
+            <Server
+              size={14}
+              style={{ color: "var(--text-secondary)" }}
+            />
             <h4
-              style={{ margin: 0, fontSize: "13px", letterSpacing: "-0.01em" }}
+              style={{
+                margin: 0,
+                fontSize: "13px",
+                letterSpacing: "-0.01em",
+              }}
             >
               Network Activity
             </h4>
@@ -595,7 +653,7 @@ export function ExplorerVisualizer({ data }: { data: any }) {
                 margin: 0,
               }}
             >
-              No network failures recorded.
+              No network failures detected.
             </p>
           ) : (
             <div
@@ -641,9 +699,16 @@ export function SourceMapperVisualizer({ data }: { data: any }) {
   if (!data) return <EmptyState stage="Source Mapper" />;
 
   const files = data.candidate_files || [];
+  const astQuery = data.ast_query || "";
+  const targetObservation = data.target_observation || "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <StagePurposeBanner
+        stageId="mapper"
+        purpose="The agent traces the runtime evidence back to source code using Tree-sitter AST queries, mapping the DOM element to its JSX component and exact file location."
+      />
+
       <div
         style={{
           display: "flex",
@@ -663,16 +728,43 @@ export function SourceMapperVisualizer({ data }: { data: any }) {
               letterSpacing: "-0.02em",
             }}
           >
-            Mapped AST Nodes
+            Source Code Mapping
           </h3>
         </div>
         <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
           Target:{" "}
           <code style={{ color: "var(--signal-bright)" }}>
-            {data.target_observation || "Clear completed button"}
+            {targetObservation || "Clear completed button"}
           </code>
         </span>
       </div>
+
+      {astQuery && (
+        <div
+          style={{
+            padding: "10px 14px",
+            borderRadius: "6px",
+            background: "rgba(59,130,246,0.04)",
+            border: "1px solid rgba(59,130,246,0.15)",
+            fontSize: "11px",
+            fontFamily: "monospace",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <span
+            style={{
+              color: "#3b82f6",
+              fontWeight: 700,
+              fontSize: "9px",
+            }}
+          >
+            AST QUERY
+          </span>
+          <pre style={{ margin: "4px 0 0", whiteSpace: "pre-wrap" }}>
+            {astQuery}
+          </pre>
+        </div>
+      )}
 
       {files.length === 0 ? (
         <div
@@ -694,7 +786,6 @@ export function SourceMapperVisualizer({ data }: { data: any }) {
             position: "relative",
           }}
         >
-          {/* Animated background grid for AST visualizer */}
           <div
             style={{
               position: "absolute",
@@ -713,15 +804,13 @@ export function SourceMapperVisualizer({ data }: { data: any }) {
               className="panel-card animate-fade-in-up"
               style={{
                 padding: "18px",
-                background: "rgba(18, 20, 28, 0.4)",
+                background: "rgba(18,20,28,0.4)",
                 border: "1px solid var(--border)",
                 borderRadius: "12px",
                 animationDelay: `${i * 0.1}s`,
                 position: "relative",
-                overflow: "hidden",
               }}
             >
-              {/* File Header */}
               <div
                 style={{
                   display: "flex",
@@ -754,20 +843,42 @@ export function SourceMapperVisualizer({ data }: { data: any }) {
                     {file.file_path}
                   </strong>
                 </div>
-                <div style={{ flexShrink: 0 }}>
-                  <ConfidenceBadge
-                    level={
-                      file.heuristic_confidence >= 0.8
-                        ? "High"
-                        : file.heuristic_confidence >= 0.5
-                          ? "Medium"
-                          : "Low"
-                    }
-                  />
-                </div>
+                <ConfidenceBadge
+                  level={
+                    file.heuristic_confidence >= 0.8
+                      ? "High"
+                      : file.heuristic_confidence >= 0.5
+                        ? "Medium"
+                        : "Low"
+                  }
+                />
               </div>
 
-              {/* AST Node Flowchart Container */}
+              {file.match_reason && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    background: "rgba(59,130,246,0.04)",
+                    border: "1px solid rgba(59,130,246,0.1)",
+                    fontSize: "11px",
+                    color: "var(--text-secondary)",
+                    marginBottom: "14px",
+                  }}
+                >
+                  <Target size={12} style={{ color: "#3b82f6" }} />
+                  <span>
+                    <strong style={{ color: "var(--text)" }}>
+                      Match reason:
+                    </strong>{" "}
+                    {file.match_reason}
+                  </span>
+                </div>
+              )}
+
               <div
                 style={{
                   display: "flex",
@@ -777,7 +888,6 @@ export function SourceMapperVisualizer({ data }: { data: any }) {
                   paddingLeft: "18px",
                 }}
               >
-                {/* Visual SVG paths drawing dynamic lines connecting elements */}
                 <svg
                   style={{
                     position: "absolute",
@@ -839,7 +949,6 @@ export function SourceMapperVisualizer({ data }: { data: any }) {
                       </span>
                     </div>
 
-                    {/* Matching nodes/snippet */}
                     {(comp.matching_nodes || []).map(
                       (node: any, ni: number) => (
                         <div key={ni} style={{ marginTop: "10px" }}>
@@ -852,7 +961,7 @@ export function SourceMapperVisualizer({ data }: { data: any }) {
                               marginBottom: "6px",
                             }}
                           >
-                            <span>Match Heuristic: {node.match_reason}</span>
+                            <span>{node.match_reason}</span>
                             <span>
                               Lines {node.line_start}-{node.line_end}
                             </span>
@@ -885,234 +994,255 @@ export function AnalyzerVisualizer({ data }: { data: any }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Conclusion Card */}
-      <div
-        className="investigation-canvas"
-        style={{
-          gridTemplateColumns: "1fr",
-          padding: "20px",
-          border: "1px solid rgba(16, 185, 129, 0.25)",
-          background:
-            "radial-gradient(circle at 10% 10%, rgba(16, 185, 129, 0.1), transparent 12rem), linear-gradient(125deg, #0f1614, #080c0b)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "12px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <BrainCircuit size={20} style={{ color: "#10b981" }} />
-            <span className="eyebrow" style={{ color: "#10b981" }}>
-              CONVERGED CONCLUSION
-            </span>
-          </div>
-          <ConfidenceBadge
-            level={conclusion.investigation_confidence || "High"}
-          />
-        </div>
-        <h3
-          style={{
-            margin: "0 0 8px 0",
-            fontSize: "16px",
-            fontWeight: 700,
-            lineHeight: "1.4",
-            color: "var(--text)",
-          }}
-        >
-          {conclusion.root_cause || "Root cause identified."}
-        </h3>
-        <p
-          style={{
-            margin: 0,
-            fontSize: "13px",
-            color: "var(--text-secondary)",
-            lineHeight: "1.5",
-          }}
-        >
-          {conclusion.confidence_rationale}
-        </p>
-      </div>
+      <StagePurposeBanner
+        stageId="analyzer"
+        purpose="The agent evaluates competing hypotheses against runtime evidence and source code. Each hypothesis is scored by plausibility; the strongest explanation becomes the root cause driving the repair strategy."
+      />
 
-      {/* Competing Hypotheses */}
       <div>
         <h4 className="eyebrow" style={{ marginBottom: "10px" }}>
-          COMPETING HYPOTHESES EVALUATION
+          COMPETING HYPOTHESES
         </h4>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {hypotheses.map((hyp: any, i: number) => {
-            const isFavored = hyp.plausibility_score === "High";
-            return (
-              <div
-                key={i}
-                className="panel-card animate-fade-in-up"
-                style={{
-                  padding: "14px",
-                  border: isFavored
-                    ? "1px solid rgba(16, 185, 129, 0.2)"
-                    : "1px solid var(--border)",
-                  background: isFavored
-                    ? "rgba(16, 185, 129, 0.02)"
-                    : "var(--surface)",
-                  animationDelay: `${i * 0.1}s`,
-                  opacity: 0,
-                }}
-              >
+          {hypotheses.length === 0 ? (
+            <p
+              style={{
+                color: "var(--text-muted)",
+                fontSize: "12px",
+                margin: 0,
+              }}
+            >
+              No hypotheses generated.
+            </p>
+          ) : (
+            hypotheses.map((hyp: any, i: number) => {
+              const isFavored = hyp.plausibility_score === "High";
+              return (
                 <div
+                  key={i}
+                  className="panel-card animate-fade-in-up"
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: "8px",
+                    padding: "14px",
+                    border: isFavored
+                      ? "1px solid rgba(16,185,129,0.2)"
+                      : "1px solid var(--border)",
+                    background: isFavored
+                      ? "rgba(16,185,129,0.02)"
+                      : "var(--surface)",
+                    animationDelay: `${i * 0.1}s`,
+                    opacity: 0,
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "8px",
+                      justifyContent: "space-between",
+                      marginBottom: "8px",
                     }}
                   >
-                    <span
-                      style={{
-                        width: "18px",
-                        height: "18px",
-                        borderRadius: "50%",
-                        background: isFavored
-                          ? "#10b981"
-                          : "var(--surface-raised)",
-                        color: isFavored ? "black" : "var(--text-muted)",
-                        display: "grid",
-                        placeItems: "center",
-                        fontSize: "10px",
-                        fontWeight: 800,
-                      }}
-                    >
-                      {i + 1}
-                    </span>
-                    <strong
-                      style={{
-                        fontSize: "13px",
-                        color: isFavored
-                          ? "var(--text)"
-                          : "var(--text-secondary)",
-                      }}
-                    >
-                      {hyp.hypothesis}
-                    </strong>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-end",
-                      gap: "4px",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: "10px",
-                        fontWeight: 700,
-                        color: isFavored
-                          ? "#10b981"
-                          : hyp.plausibility_score === "Medium"
-                            ? "var(--warning)"
-                            : "var(--text-muted)",
-                      }}
-                    >
-                      {hyp.plausibility_score} Plausibility
-                    </span>
                     <div
                       style={{
-                        width: "80px",
-                        height: "3px",
-                        borderRadius: "2px",
-                        background: "rgba(255,255,255,0.06)",
-                        overflow: "hidden",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
                       }}
                     >
-                      <div
-                        className="animate-fill-bar"
+                      <span
                         style={{
-                          height: "100%",
+                          width: "18px",
+                          height: "18px",
+                          borderRadius: "50%",
                           background: isFavored
+                            ? "#10b981"
+                            : "var(--surface-raised)",
+                          color: isFavored ? "black" : "var(--text-muted)",
+                          display: "grid",
+                          placeItems: "center",
+                          fontSize: "10px",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                      <strong
+                        style={{
+                          fontSize: "13px",
+                          color: isFavored
+                            ? "var(--text)"
+                            : "var(--text-secondary)",
+                        }}
+                      >
+                        {hyp.hypothesis}
+                      </strong>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "flex-end",
+                        gap: "4px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          color: isFavored
                             ? "#10b981"
                             : hyp.plausibility_score === "Medium"
                               ? "var(--warning)"
-                              : "var(--danger)",
-                          width: isFavored
-                            ? "100%"
-                            : hyp.plausibility_score === "Medium"
-                              ? "60%"
-                              : "25%",
+                              : "var(--text-muted)",
                         }}
-                      />
+                      >
+                        {hyp.plausibility_score}
+                      </span>
+                      <div
+                        style={{
+                          width: "80px",
+                          height: "3px",
+                          borderRadius: "2px",
+                          background: "rgba(255,255,255,0.06)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          className="animate-fill-bar"
+                          style={{
+                            height: "100%",
+                            background: isFavored
+                              ? "#10b981"
+                              : hyp.plausibility_score === "Medium"
+                                ? "var(--warning)"
+                                : "var(--danger)",
+                            width: isFavored
+                              ? "100%"
+                              : hyp.plausibility_score === "Medium"
+                                ? "60%"
+                                : "25%",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ paddingLeft: "26px", fontSize: "12px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "6px",
+                        marginTop: "6px",
+                      }}
+                    >
+                      {(hyp.supporting_evidence || []).map(
+                        (e: string, idx: number) => (
+                          <span
+                            key={idx}
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: "4px",
+                              background: "rgba(255,255,255,0.03)",
+                              color: "var(--text-secondary)",
+                              border: "1px solid var(--border)",
+                              fontSize: "10px",
+                            }}
+                          >
+                            + {e}
+                          </span>
+                        ),
+                      )}
                     </div>
                   </div>
                 </div>
-
-                <div style={{ paddingLeft: "26px", fontSize: "12px" }}>
-                  {/* Support evidence list */}
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "6px",
-                      marginTop: "6px",
-                    }}
-                  >
-                    {(hyp.supporting_evidence || []).map(
-                      (e: string, idx: number) => (
-                        <span
-                          key={idx}
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: "4px",
-                            background: "rgba(255,255,255,0.03)",
-                            color: "var(--text-secondary)",
-                            border: "1px solid var(--border)",
-                            fontSize: "10px",
-                          }}
-                        >
-                          + {e}
-                        </span>
-                      ),
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Repair Objectives */}
-      {repairCtx.repair_objectives && (
-        <div className="panel-card" style={{ padding: "16px" }}>
-          <h4 className="eyebrow" style={{ marginBottom: "8px" }}>
-            REPAIR OBJECTIVES
-          </h4>
-          <ul
+      {conclusion.root_cause && (
+        <div
+          className="investigation-canvas animate-fade-in-up"
+          style={{
+            padding: "20px",
+            border: "1px solid rgba(16,185,129,0.25)",
+            background:
+              "radial-gradient(circle at 10% 10%, rgba(16,185,129,0.1), transparent 12rem), linear-gradient(125deg,#0f1614,#080c0b)",
+          }}
+        >
+          <div
             style={{
-              margin: 0,
-              paddingLeft: "18px",
-              fontSize: "13px",
-              color: "var(--text-secondary)",
-              lineHeight: "1.6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "12px",
             }}
           >
-            {repairCtx.repair_objectives.map((obj: string, i: number) => (
-              <li key={i}>{obj}</li>
-            ))}
-          </ul>
+            <div
+              style={{ display: "flex", alignItems: "center", gap: "8px" }}
+            >
+              <BrainCircuit size={20} style={{ color: "#10b981" }} />
+              <span className="eyebrow" style={{ color: "#10b981" }}>
+                ROOT CAUSE
+              </span>
+            </div>
+            <ConfidenceBadge
+              level={conclusion.investigation_confidence || "High"}
+            />
+          </div>
+          <h3
+            style={{
+              margin: "0 0 8px",
+              fontSize: "16px",
+              fontWeight: 700,
+              lineHeight: "1.4",
+              color: "var(--text)",
+            }}
+          >
+            {conclusion.root_cause}
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "13px",
+              color: "var(--text-secondary)",
+              lineHeight: "1.5",
+            }}
+          >
+            {conclusion.confidence_rationale}
+          </p>
         </div>
       )}
+
+      {repairCtx.repair_objectives &&
+        repairCtx.repair_objectives.length > 0 && (
+          <div className="panel-card" style={{ padding: "16px" }}>
+            <h4 className="eyebrow" style={{ marginBottom: "8px" }}>
+              REPAIR OBJECTIVES
+            </h4>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: "18px",
+                fontSize: "13px",
+                color: "var(--text-secondary)",
+                lineHeight: "1.6",
+              }}
+            >
+              {repairCtx.repair_objectives.map((obj: string, i: number) => (
+                <li key={i}>{obj}</li>
+              ))}
+            </ul>
+          </div>
+        )}
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// SelfTypingCode
+// ---------------------------------------------------------------------------
 
 function SelfTypingCode({ code, color }: { code: string; color: string }) {
   const [typed, setTyped] = useState("");
@@ -1126,14 +1256,14 @@ function SelfTypingCode({ code, color }: { code: string; color: string }) {
       } else {
         clearInterval(timer);
       }
-    }, 10);
+    }, 5);
     return () => clearInterval(timer);
   }, [code]);
 
   return (
     <pre
       style={{
-        margin: "6px 0 0 0",
+        margin: "6px 0 0",
         padding: 0,
         fontSize: "12.5px",
         color,
@@ -1149,7 +1279,7 @@ function SelfTypingCode({ code, color }: { code: string; color: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Repair Visualizer (Patch/Diff Viewer)
+// 4. Repair Visualizer — PR-quality diff
 // ---------------------------------------------------------------------------
 
 export function RepairVisualizer({ data }: { data: any }) {
@@ -1157,44 +1287,94 @@ export function RepairVisualizer({ data }: { data: any }) {
 
   const diffs = data.diff || [];
   const target = data.target_file || "target-app/src/App.tsx";
+  const commitMessage = data.commit_message || "";
+  const modificationSummary = data.modification_summary || "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <StagePurposeBanner
+        stageId="repair"
+        purpose="Based on the root cause, the agent synthesizes a minimal, surgical patch scoped to only the necessary lines, then validates syntax before applying."
+      />
+
+      {/* Commit Summary */}
+      <div
+        style={{
+          padding: "14px",
+          borderRadius: "8px",
+          border: "1px solid var(--border)",
+          background: "rgba(16,185,129,0.03)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            marginBottom: "8px",
+          }}
+        >
+          <GitCommit size={16} style={{ color: "#10b981" }} />
+          <span
+            className="eyebrow"
+            style={{ color: "#10b981", fontSize: "9px" }}
+          >
+            COMMIT SUMMARY
+          </span>
+          <ConfidenceBadge level={data.repair_confidence || "High"} />
+        </div>
+        {commitMessage && (
+          <pre
+            style={{
+              margin: 0,
+              fontSize: "12px",
+              color: "var(--text)",
+              fontFamily: "monospace",
+              whiteSpace: "pre-wrap",
+              lineHeight: "1.5",
+            }}
+          >
+            {commitMessage}
+          </pre>
+        )}
+        {modificationSummary && (
+          <p
+            style={{
+              margin: "6px 0 0",
+              fontSize: "12px",
+              color: "var(--text-secondary)",
+              lineHeight: "1.5",
+            }}
+          >
+            {modificationSummary}
+          </p>
+        )}
+        {!commitMessage && !modificationSummary && (
+          <p
+            style={{
+              margin: 0,
+              fontSize: "13px",
+              color: "var(--text-secondary)",
+            }}
+          >
+            {data.patch_explanation}
+          </p>
+        )}
+      </div>
+
+      {/* File header */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          borderBottom: "1px solid var(--border)",
-          paddingBottom: "10px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Wrench size={18} style={{ color: "var(--signal-bright)" }} />
-          <h3
-            style={{
-              margin: 0,
-              fontSize: "15px",
-              fontWeight: 650,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Surgical Patch Diff
-          </h3>
-        </div>
-        <ConfidenceBadge level={data.repair_confidence || "High"} />
-      </div>
-
-      <div
-        style={{
-          fontSize: "13px",
+          gap: "6px",
+          fontSize: "11px",
           color: "var(--text-secondary)",
-          lineHeight: "1.5",
         }}
       >
-        <p style={{ margin: "0 0 10px 0" }}>{data.patch_explanation}</p>
-        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-          Target File:{" "}
+        <FileDiff size={14} style={{ color: "var(--signal-bright)" }} />
+        <span>
+          Target file:{" "}
           <code style={{ color: "var(--signal-bright)" }}>{target}</code>
         </span>
       </div>
@@ -1211,7 +1391,7 @@ export function RepairVisualizer({ data }: { data: any }) {
           No diff blocks generated.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {diffs.map((diff: any, idx: number) => (
             <div
               key={idx}
@@ -1222,12 +1402,45 @@ export function RepairVisualizer({ data }: { data: any }) {
                 background: "#090a0f",
               }}
             >
+              {/* Diff header */}
               <div
                 style={{
-                  background: "rgba(239, 68, 68, 0.02)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 12px",
+                  background: "rgba(255,255,255,0.02)",
+                  borderBottom: "1px solid var(--border)",
+                  fontSize: "10px",
+                  color: "var(--text-muted)",
+                  fontFamily: "monospace",
+                }}
+              >
+                <span style={{ color: "#ef4444" }}>−{diff.removed_lines || "?"}</span>
+                <span style={{ color: "#10b981" }}>+{diff.added_lines || "?"}</span>
+                <span style={{ flex: 1 }}>
+                  @@ -{diff.search_start_line || "?"},{" "}
+                  +{diff.replace_start_line || "?"} @@
+                </span>
+                {diff.change_reason && (
+                  <span
+                    style={{
+                      color: "var(--signal-bright)",
+                      fontSize: "9px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {diff.change_reason}
+                  </span>
+                )}
+              </div>
+
+              {/* Original */}
+              <div
+                style={{
                   padding: "12px",
                   borderLeft: "3px solid #ef4444",
-                  borderBottom: "1px solid var(--border)",
+                  background: "rgba(239,68,68,0.02)",
                 }}
               >
                 <span
@@ -1238,15 +1451,17 @@ export function RepairVisualizer({ data }: { data: any }) {
                     letterSpacing: "0.08em",
                   }}
                 >
-                  SEARCH FOR (ORIGINAL)
+                  BEFORE
                 </span>
                 <SelfTypingCode code={diff.search_block} color="#f87171" />
               </div>
+
+              {/* Patched */}
               <div
                 style={{
-                  background: "rgba(16, 185, 129, 0.02)",
                   padding: "12px",
                   borderLeft: "3px solid #10b981",
+                  background: "rgba(16,185,129,0.02)",
                 }}
                 className="animate-patch-glow"
               >
@@ -1258,7 +1473,7 @@ export function RepairVisualizer({ data }: { data: any }) {
                     letterSpacing: "0.08em",
                   }}
                 >
-                  REPLACE WITH (PATCHED)
+                  AFTER
                 </span>
                 <SelfTypingCode code={diff.replace_block} color="#34d399" />
               </div>
@@ -1267,7 +1482,7 @@ export function RepairVisualizer({ data }: { data: any }) {
         </div>
       )}
 
-      {/* Risks */}
+      {/* Risk assessment */}
       {data.repair_risks && data.repair_risks.length > 0 && (
         <div
           style={{
@@ -1275,16 +1490,16 @@ export function RepairVisualizer({ data }: { data: any }) {
             gap: "8px",
             alignItems: "center",
             padding: "10px 14px",
-            border: "1px solid rgba(245, 158, 11, 0.2)",
+            border: "1px solid rgba(245,158,11,0.2)",
             borderRadius: "6px",
-            background: "rgba(245, 158, 11, 0.02)",
+            background: "rgba(245,158,11,0.02)",
             color: "#f59e0b",
             fontSize: "12px",
           }}
         >
           <AlertTriangle size={15} style={{ flexShrink: 0 }} />
           <span>
-            <strong>Risk Assessment:</strong> {data.repair_risks.join(", ")}
+            <strong>Risk:</strong> {data.repair_risks.join(", ")}
           </span>
         </div>
       )}
@@ -1311,27 +1526,43 @@ export function VerifierVisualizer({ data }: { data: any }) {
   if (!data) return <EmptyState stage="Verifier" />;
 
   const passed = data.verification_status === "Passed";
-  const inconclusive = data.verification_status === "Inconclusive";
   const regressions = data.regressions_detected || [];
+  const verScreenshots = data.screenshots || [];
+  const previousBehavior = data.previous_behavior || "";
+  const currentBehavior = data.current_behavior || "";
+  const runtimeAssertions = data.runtime_assertions || [];
+  const consoleAssertions = data.console_assertions || [];
+  const a11yStatus = data.accessibility_status || { violations: 0, passed: 0 };
+
+  const getFullUrl = (p: string) => {
+    if (!p) return "";
+    if (p.startsWith("/api")) return `http://localhost:8000${p}`;
+    return p;
+  };
+
+  const passCount = steps.filter(
+    (_: any, i: number) => i < activeStepIndex,
+  ).length;
+  const totalCount = steps.length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Verification status header */}
+      <StagePurposeBanner
+        stageId="verifier"
+        purpose="The agent replays the original bug scenario against the patched application, checking each step against expected behavior. All assertions must pass for the patch to be confirmed."
+      />
+
+      {/* How do we know this fix worked? — Status header */}
       <div
         className="investigation-canvas animate-fade-in-up"
         style={{
-          gridTemplateColumns: "1fr",
           padding: "20px",
           border: passed
-            ? "1px solid rgba(16, 185, 129, 0.25)"
-            : inconclusive
-              ? "1px solid rgba(245, 158, 11, 0.25)"
-              : "1px solid rgba(239, 68, 68, 0.25)",
+            ? "1px solid rgba(16,185,129,0.25)"
+            : "1px solid rgba(239,68,68,0.25)",
           background: passed
-            ? "radial-gradient(circle at 10% 10%, rgba(16, 185, 129, 0.1), transparent 12rem), linear-gradient(125deg, #0f1614, #080c0b)"
-            : inconclusive
-              ? "radial-gradient(circle at 10% 10%, rgba(245, 158, 11, 0.1), transparent 12rem), linear-gradient(125deg, #18150f, #0d0b08)"
-              : "radial-gradient(circle at 10% 10%, rgba(239, 68, 68, 0.1), transparent 12rem), linear-gradient(125deg, #180f0f, #0d0808)",
+            ? "radial-gradient(circle at 10% 10%, rgba(16,185,129,0.1), transparent 12rem), linear-gradient(125deg,#0f1614,#080c0b)"
+            : "radial-gradient(circle at 10% 10%, rgba(239,68,68,0.1), transparent 12rem), linear-gradient(125deg,#180f0f,#0d0808)",
         }}
       >
         <div
@@ -1344,28 +1575,35 @@ export function VerifierVisualizer({ data }: { data: any }) {
         >
           <ShieldCheck
             size={22}
-            style={{
-              color: passed ? "#10b981" : inconclusive ? "#f59e0b" : "#ef4444",
-            }}
+            style={{ color: passed ? "#10b981" : "#ef4444" }}
           />
           <span
             className="eyebrow"
+            style={{ color: passed ? "#10b981" : "#ef4444" }}
+          >
+            {passed ? "FIX CONFIRMED" : "VERIFICATION FAILED"}
+          </span>
+          <span style={{ flex: 1 }} />
+          <span
             style={{
-              color: passed ? "#10b981" : inconclusive ? "#f59e0b" : "#ef4444",
+              fontSize: "11px",
+              color: "var(--text-muted)",
             }}
           >
-            VERIFICATION {data.verification_status?.toUpperCase() || "COMPLETE"}
+            {passCount}/{totalCount} assertions passed
           </span>
         </div>
         <h3
           style={{
-            margin: "0 0 6px 0",
+            margin: "0 0 6px",
             fontSize: "16px",
             fontWeight: 700,
             color: "var(--text)",
           }}
         >
-          {data.pass_fail_reason || "Verification process completed."}
+          {passed
+            ? "The patch resolves the reported issue. All assertions pass."
+            : data.pass_fail_reason || "Verification failed."}
         </h3>
         <p
           style={{
@@ -1374,29 +1612,324 @@ export function VerifierVisualizer({ data }: { data: any }) {
             color: "var(--text-secondary)",
           }}
         >
-          Rollback Triggered:{" "}
+          Rollback:{" "}
           <strong
             style={{
-              color: data.rollback_required
-                ? "var(--danger)"
-                : "var(--success)",
+              color: data.rollback_required ? "var(--danger)" : "var(--success)",
             }}
           >
-            {data.rollback_required
-              ? "YES (Restoring baseline)"
-              : "NO (Patch preserved)"}
+            {data.rollback_required ? "YES" : "NO"}
           </strong>
         </p>
       </div>
 
+      {/* Behavior comparison: before vs after */}
+      {(previousBehavior || currentBehavior) && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "12px",
+          }}
+        >
+          <div
+            className="panel-card"
+            style={{
+              padding: "14px",
+              borderLeft: "3px solid #ef4444",
+            }}
+          >
+            <span
+              className="eyebrow"
+              style={{ fontSize: "9px", color: "#ef4444" }}
+            >
+              PREVIOUS BEHAVIOR (BROKEN)
+            </span>
+            <p
+              style={{
+                margin: "6px 0 0",
+                fontSize: "12px",
+                color: "var(--text-secondary)",
+                lineHeight: "1.5",
+              }}
+            >
+              {previousBehavior}
+            </p>
+          </div>
+          <div
+            className="panel-card"
+            style={{
+              padding: "14px",
+              borderLeft: "3px solid #10b981",
+            }}
+          >
+            <span
+              className="eyebrow"
+              style={{ fontSize: "9px", color: "#10b981" }}
+            >
+              CURRENT BEHAVIOR (FIXED)
+            </span>
+            <p
+              style={{
+                margin: "6px 0 0",
+                fontSize: "12px",
+                color: "var(--text-secondary)",
+                lineHeight: "1.5",
+              }}
+            >
+              {currentBehavior}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Validation checks grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))",
+          gap: "12px",
+        }}
+      >
+        {/* Runtime validation */}
+        <div className="panel-card" style={{ padding: "12px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginBottom: "8px",
+            }}
+          >
+            <Code2 size={13} style={{ color: "var(--signal-bright)" }} />
+            <span className="eyebrow" style={{ fontSize: "9px" }}>
+              RUNTIME VALIDATION
+            </span>
+          </div>
+          {runtimeAssertions.length === 0 ? (
+            <p style={{ margin: 0, fontSize: "11px", color: "var(--text-muted)" }}>
+              No runtime assertions recorded.
+            </p>
+          ) : (
+            runtimeAssertions.map((a: any, i: number) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "11px",
+                  color:
+                    a.passed === true
+                      ? "var(--success)"
+                      : "var(--danger)",
+                  marginTop: "4px",
+                }}
+              >
+                {a.passed === true ? (
+                  <Check size={10} />
+                ) : (
+                  <X size={10} />
+                )}
+                <span>{a.message}</span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Console validation */}
+        <div className="panel-card" style={{ padding: "12px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginBottom: "8px",
+            }}
+          >
+            <Terminal size={13} style={{ color: "var(--signal-bright)" }} />
+            <span className="eyebrow" style={{ fontSize: "9px" }}>
+              CONSOLE VALIDATION
+            </span>
+          </div>
+          {consoleAssertions.length === 0 ? (
+            <p style={{ margin: 0, fontSize: "11px", color: "var(--text-muted)" }}>
+              No new errors introduced.
+            </p>
+          ) : (
+            consoleAssertions.map((a: any, i: number) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "11px",
+                  color:
+                    a.passed === true
+                      ? "var(--success)"
+                      : "var(--danger)",
+                  marginTop: "4px",
+                }}
+              >
+                {a.passed === true ? (
+                  <Check size={10} />
+                ) : (
+                  <X size={10} />
+                )}
+                <span>{a.message}</span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Accessibility */}
+        <div className="panel-card" style={{ padding: "12px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginBottom: "8px",
+            }}
+          >
+            <Accessibility size={13} style={{ color: "var(--signal-bright)" }} />
+            <span className="eyebrow" style={{ fontSize: "9px" }}>
+              ACCESSIBILITY
+            </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              fontSize: "12px",
+            }}
+          >
+            <span style={{ color: "var(--success)" }}>
+              {a11yStatus.passed || "—"} passed
+            </span>
+            {(a11yStatus.violations || 0) > 0 && (
+              <span style={{ color: "var(--danger)" }}>
+                {a11yStatus.violations} violations
+              </span>
+            )}
+            {(!a11yStatus.violations || a11yStatus.violations === 0) && (
+              <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>
+                No new violations introduced
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Regression status */}
+        <div className="panel-card" style={{ padding: "12px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginBottom: "8px",
+            }}
+          >
+            <AlertTriangle size={13} style={{ color: "var(--signal-bright)" }} />
+            <span className="eyebrow" style={{ fontSize: "9px" }}>
+              REGRESSIONS
+            </span>
+          </div>
+          {regressions.length === 0 ? (
+            <p
+              style={{
+                margin: 0,
+                fontSize: "12px",
+                color: "var(--success)",
+              }}
+            >
+              No regressions detected
+            </p>
+          ) : (
+            regressions.map((r: string, i: number) => (
+              <div
+                key={i}
+                style={{
+                  fontSize: "11px",
+                  color: "var(--danger)",
+                  marginTop: "4px",
+                }}
+              >
+                {r}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Verification screenshots */}
+      {verScreenshots.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px,1fr))",
+            gap: "12px",
+          }}
+        >
+          {verScreenshots.map((s: any, i: number) => (
+            <div
+              key={i}
+              className="panel-card"
+              style={{
+                padding: "12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <span
+                className="eyebrow"
+                style={{ fontSize: "9px", color: "var(--text-muted)" }}
+              >
+                {s.name === "after_patch"
+                  ? "AFTER PATCH APPLIED"
+                  : s.name?.toUpperCase().replace(/_/g, " ") || "SCREENSHOT"}
+              </span>
+              <div
+                style={{
+                  borderRadius: "6px",
+                  overflow: "hidden",
+                  border: "1px solid var(--border)",
+                  background: "#090a0f",
+                  aspectRatio: "4/3",
+                  display: "grid",
+                  placeItems: "center",
+                }}
+              >
+                <img
+                  src={getFullUrl(s.path)}
+                  alt={s.name || "Verification screenshot"}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Executed steps / assertions */}
       <div>
         <h4 className="eyebrow" style={{ marginBottom: "10px" }}>
-          EXECUTED PLAYWRIGHT ASSERTIONS
+          PLAYWRIGHT ASSERTIONS
         </h4>
         {steps.length === 0 ? (
           <p
-            style={{ color: "var(--text-muted)", fontSize: "12px", margin: 0 }}
+            style={{
+              color: "var(--text-muted)",
+              fontSize: "12px",
+              margin: 0,
+            }}
           >
             No steps executed.
           </p>
@@ -1417,9 +1950,9 @@ export function VerifierVisualizer({ data }: { data: any }) {
                     alignItems: "center",
                     justifyContent: "space-between",
                     background: isResolved
-                      ? "rgba(16, 185, 129, 0.01)"
+                      ? "rgba(16,185,129,0.01)"
                       : isActive
-                        ? "rgba(245, 158, 11, 0.02)"
+                        ? "rgba(245,158,11,0.02)"
                         : "rgba(255,255,255,0.01)",
                     borderLeft: isResolved
                       ? "3px solid #10b981"
@@ -1438,33 +1971,7 @@ export function VerifierVisualizer({ data }: { data: any }) {
                     }}
                   >
                     {isResolved ? (
-                      <div
-                        style={{
-                          position: "relative",
-                          display: "grid",
-                          placeItems: "center",
-                        }}
-                      >
-                        <div
-                          className="ripple-circle"
-                          style={{
-                            position: "absolute",
-                            width: "16px",
-                            height: "16px",
-                            borderRadius: "50%",
-                            border: "1px solid #10b981",
-                            pointerEvents: "none",
-                          }}
-                        />
-                        <CheckCircle2
-                          size={14}
-                          style={{
-                            color: "#10b981",
-                            position: "relative",
-                            zIndex: 1,
-                          }}
-                        />
-                      </div>
+                      <CheckCircle2 size={14} style={{ color: "#10b981" }} />
                     ) : isActive ? (
                       <span
                         className="pulse-dot"
@@ -1515,51 +2022,12 @@ export function VerifierVisualizer({ data }: { data: any }) {
           </div>
         )}
       </div>
-
-      {/* Regressions log */}
-      {regressions.length > 0 && (
-        <div
-          className="panel-card"
-          style={{
-            padding: "14px",
-            border: "1px solid rgba(239, 68, 68, 0.25)",
-            background: "rgba(239, 68, 68, 0.02)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              color: "#ef4444",
-              marginBottom: "8px",
-            }}
-          >
-            <AlertTriangle size={15} />
-            <h4 style={{ margin: 0, fontSize: "13px", fontWeight: 700 }}>
-              Regressions Detected
-            </h4>
-          </div>
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: "18px",
-              fontSize: "12px",
-              color: "var(--text-secondary)",
-            }}
-          >
-            {regressions.map((reg: string, idx: number) => (
-              <li key={idx}>{reg}</li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// 6. Empty State / Loading helper
+// Empty State
 // ---------------------------------------------------------------------------
 
 function EmptyState({ stage }: { stage: string }) {
@@ -1580,13 +2048,13 @@ function EmptyState({ stage }: { stage: string }) {
       <HelpCircle size={32} style={{ marginBottom: "12px", opacity: 0.5 }} />
       <h3
         style={{
-          margin: "0 0 4px 0",
+          margin: "0 0 4px",
           fontSize: "14px",
           fontWeight: 650,
           color: "var(--text-secondary)",
         }}
       >
-        No details available for {stage}
+        {stage} — awaiting data
       </h3>
       <p
         style={{
@@ -1597,8 +2065,8 @@ function EmptyState({ stage }: { stage: string }) {
           lineHeight: "1.4",
         }}
       >
-        The pipeline must reach or complete this stage during execution before
-        snapshot artifacts become accessible.
+        The pipeline must reach or complete this stage before artifacts become
+        accessible.
       </p>
     </div>
   );

@@ -4,7 +4,6 @@ import { AppShell } from "../../components/chrome/AppShell";
 import { StageRail } from "../../components/chrome/StageRail";
 import { StatusBadge } from "../../components/data-display/StatusBadge";
 import { demoRun } from "../../fixtures/demoRun";
-import type { PipelineStage } from "../../types/pipeline";
 import { stageColors } from "../../types/pipeline";
 import {
   ExplorerVisualizer,
@@ -13,90 +12,11 @@ import {
   RepairVisualizer,
   VerifierVisualizer,
 } from "../../components/run/StageVisualizers";
-const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-  const el = e.currentTarget;
-  const rect = el.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const centerX = rect.width / 2;
-  const centerY = rect.height / 2;
-  const rotateX = ((centerY - y) / centerY) * 4;
-  const rotateY = ((x - centerX) / centerX) * 4;
-  el.style.setProperty("--rot-x", `${rotateX}deg`);
-  el.style.setProperty("--rot-y", `${rotateY}deg`);
-};
-
-const handleCardMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
-  const el = e.currentTarget;
-  el.style.setProperty("--rot-x", "0deg");
-  el.style.setProperty("--rot-y", "0deg");
-};
-
-function MobilePipeline({
-  stages,
-  selectedStageId,
-  onSelectStage,
-}: {
-  stages: PipelineStage[];
-  selectedStageId: string;
-  onSelectStage: (id: string) => void;
-}) {
-  return (
-    <nav
-      className="mobile-pipeline"
-      aria-label="Pipeline stages"
-      style={{ padding: "8px", gap: "8px" }}
-    >
-      {stages.map((stage, index) => {
-        const isSelected = stage.id === selectedStageId;
-        const activeColor = stageColors[stage.id];
-        return (
-          <button
-            type="button"
-            className={`mobile-stage mobile-stage-${stage.status}`}
-            key={stage.id}
-            onClick={() => onSelectStage(stage.id)}
-            aria-pressed={isSelected}
-            aria-label={`${stage.name} stage`}
-            style={{
-              cursor: "pointer",
-              border: isSelected
-                ? `1px solid ${activeColor}`
-                : "1px solid var(--border)",
-              background: isSelected ? `${activeColor}15` : "transparent",
-              padding: "6px 8px",
-              borderRadius: "6px",
-              textAlign: "center",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              flex: 1,
-              minWidth: 0,
-            }}
-          >
-            <span
-              style={{
-                fontSize: "9px",
-                color: isSelected ? activeColor : "var(--text-muted)",
-              }}
-            >
-              0{index + 1}
-            </span>
-            <strong
-              style={{
-                fontSize: "10px",
-                color: isSelected ? "var(--text)" : "var(--text-secondary)",
-              }}
-            >
-              {stage.name}
-            </strong>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
+import {
+  handleCardMouseMove,
+  handleCardMouseLeave,
+  MobilePipeline,
+} from "../../components/run/SharedRunUtils";
 
 export function RunDashboardPage() {
   const [demoState, setDemoState] = useState<
@@ -166,17 +86,25 @@ export function RunDashboardPage() {
         { severity: "info", message: "Todo initialized with 3 default items" },
       ],
       network_failures: [],
+      navigation_flow: [
+        { action: "navigate", selector: "http://localhost:5173" },
+        { action: "fill", selector: "input[placeholder='Add a new todo']", value: "Buy groceries" },
+        { action: "click", selector: "button:has-text('Add')" },
+        { action: "click", selector: ".todo-item:first-child input[type='checkbox']" },
+        { action: "click", selector: "button:has-text('Clear completed')" },
+      ],
       screenshots: [
         { name: "before", path: "/api/artifacts/before.png" },
-        { name: "after", path: "/api/artifacts/after.png" },
       ],
     },
     source_snapshot: {
       target_observation: "Clear completed button element",
+      ast_query: "(jsx_opening_element (tag_name) (attribute (property_identifier) @attr (#eq? @attr \"onClick\")))",
       candidate_files: [
         {
           file_path: "target-app/src/App.tsx",
           heuristic_confidence: 0.9,
+          match_reason: "File contains JSX button element with text content matching 'Clear completed'",
           components: [
             {
               component_name: "App",
