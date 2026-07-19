@@ -19,6 +19,9 @@ async def analyze_failure(explorer_snapshot: ExplorerSnapshot, source_snapshot: 
     # We serialize the snapshots to JSON, stripping out giant unneeded fields if necessary.
     # In this case, ExplorerSnapshot and SourceSnapshot are already heavily curated by the pipeline.
     
+    # Extract available files from Source Mapper
+    available_files = [f.file_path for f in source_snapshot.candidate_files]
+    
     system_prompt = """You are the Principal Software Architect and Lead Frontend QA Engineer for FrontendPilot AI.
 You are investigating a runtime failure in a React application.
 
@@ -32,6 +35,11 @@ You must follow this exact reasoning sequence:
 7. Produce a convergent investigation
 8. Generate Repair Context
 
+CRITICAL CONSTRAINT - FILE SELECTION:
+The repair_context.target_files field MUST contain only file paths from the SOURCE CANDIDATES list.
+Never invent filenames. Never guess paths.
+Use the exact paths provided in the candidate_files.
+
 Do not jump to conclusions. You must discover the most plausible explanation purely from the supplied evidence.
 Do not hallucinate. Do not output anything other than the required JSON structure.
 Be extremely precise.
@@ -43,6 +51,9 @@ RUNTIME EVIDENCE (ExplorerSnapshot):
 
 SOURCE CANDIDATES (SourceSnapshot):
 {source_snapshot.model_dump_json(indent=2)}
+
+AVAILABLE FILES (USE ONLY THESE):
+{json.dumps(available_files, indent=2)}
 
 Analyze this failure and return the structured AnalysisSnapshot.
 """

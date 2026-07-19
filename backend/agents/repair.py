@@ -6,6 +6,7 @@ import hashlib
 import subprocess
 from typing import Optional, List
 import structlog
+from difflib import SequenceMatcher
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from core.schemas import AnalysisSnapshot, RepairSnapshot, DiffBlock
@@ -42,12 +43,65 @@ def validate_syntax(file_path: str) -> bool:
         logger.warning("tsc_check_skipped", reason=str(e))
         return True # fail open if compiler isn't available
 
-def apply_patch_with_rollback(target_file: str, diffs: List[DiffBlock]) -> bool:
+def _find_closest_file(requested_path: str, available_files: List[str]) -> Optional[str]:
+    """
+    Find the closest matching file from available files using fuzzy matching.
+    Compares basenames and paths.
+    """
+    if not available_files:
+        return None
+    
+    requested_basename = os.path.basename(requested_path)
+    best_match = None
+    best_score = 0.0
+    
+    for available in available_files:
+        available_basename = os.path.basename(available)
+        
+        # Check extension match
+        if os.path.splitext(requested_basename)[1] != os.path.splitext(available_basename)[1]:
+            continue
+        
+        # Fuzzy match on basename
+        score = SequenceMatcher(None, requested_basename.lower(), available_basename.lower()).ratio()
+        if score > best_score:
+            best_score = score
+            best_match = available
+    
+    # Only return if confidence is reasonable (> 0.5)
+    if best_score > 0.5:
+        return best_match
+    return None
+
+def apply_patch_with_rollback(target_file: str, diffs: List[DiffBlock], available_files: List[str] = None) -> bool:
     """
     Validates and applies the patch. If validation fails, raises an exception and rolls back.
+    If target_file doesn't exist, attempts to find closest match from available_files.
     """
+    # Check if file exists, attempt recovery if not
     if not os.path.exists(target_file):
-        raise PatchValidationError(f"File not found: {target_file}")
+        if available_files:
+            closest = _find_closest_file(target_file, available_files)
+            if closest:
+                logger.warning(
+                    "target_file_not_found_using_closest_match",
+                    requested=target_file,
+                    closest_match=closest,
+                    available_files=available_files
+                )
+                target_file = closest
+            else:
+                logger.error(
+                    "target_file_not_found_no_match",
+                    requested=target_file,
+                    available_files=available_files
+                )
+                raise PatchValidationError(
+                    f"Target file '{target_file}' does not exist. "
+                    f"Available files: {available_files}"
+                )
+        else:
+            raise PatchValidationError(f"File not found: {target_file}")
         
     with open(target_file, "r") as f:
         original_content = f.read()
@@ -82,7 +136,7 @@ def apply_patch_with_rollback(target_file: str, diffs: List[DiffBlock]) -> bool:
         # Automatic Rollback
         try:
             import git
-            repo = git.Repo(os.path.dirname(os.path.dirname(file_path)), search_parent_directories=True)
+            repo = git.Repo(os.path.dirname(os.path.dirname(target_file)), search_parent_directories=True)
             repo.git.checkout('--', target_file)
             logger.info("git_rollback_successful", file=target_file)
         except Exception as e:
@@ -98,10 +152,18 @@ async def generate_repair(analysis: AnalysisSnapshot) -> RepairSnapshot:
     Takes the AnalysisSnapshot and generates a surgical patch using Codex.
     """
     repair_ctx = analysis.repair_context
+    
+    # Build list of available files from repair_context
+    available_files = repair_ctx.target_files if repair_ctx.target_files else []
             
     system_prompt = """You are the Principal Software Engineer (Codex Repair Agent) for FrontendPilot AI.
 You receive an Analysis Snapshot containing the root cause of a UI bug and specific repair objectives.
 Your job is to generate a surgical Search/Replace diff block to fix the bug.
+
+CRITICAL CONSTRAINT - FILE SELECTION:
+You MUST use ONLY one of the provided repository file paths.
+Never invent filenames. Never guess paths.
+The target_file field must be an exact path from the available files list.
 
 Strict Constraints:
 1. ONLY modify the code necessary to fix the bug based on the provided context snippets.
@@ -120,6 +182,9 @@ REPAIR OBJECTIVES:
 
 TARGET CONTEXT SNIPPETS:
 {json.dumps(repair_ctx.required_context_snippets, indent=2)}
+
+AVAILABLE REPOSITORY FILES (USE ONLY THESE):
+{json.dumps(available_files, indent=2)}
 
 Generate the required RepairSnapshot to fix this issue.
 """
@@ -144,9 +209,12 @@ async def execute_repair_pipeline(analysis: AnalysisSnapshot):
     
     logger.info("repair_generated", target_file=repair_snapshot.target_file, confidence=repair_snapshot.repair_confidence)
     
+    # Get available files from repair context for validation
+    available_files = analysis.repair_context.target_files if analysis.repair_context.target_files else []
+    
     # Apply patch
     try:
-        apply_patch_with_rollback(repair_snapshot.target_file, repair_snapshot.diff)
+        apply_patch_with_rollback(repair_snapshot.target_file, repair_snapshot.diff, available_files)
         logger.info("patch_applied_successfully", file=repair_snapshot.target_file)
     except (PatchValidationError, SyntaxValidationError) as e:
         logger.error("patch_application_failed", error=str(e))
