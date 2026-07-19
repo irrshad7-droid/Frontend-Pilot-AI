@@ -9,6 +9,8 @@ class ExplorerElement(BaseModel):
     is_enabled: bool
     is_visible: bool
     role: Optional[str] = None
+    is_readonly: bool = False
+    placeholder: Optional[str] = None
 
 class PageSummary(BaseModel):
     title: str

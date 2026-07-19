@@ -18,6 +18,9 @@ logger = structlog.get_logger()
 TARGET_APP_URL = os.getenv("TARGET_APP_URL", "http://localhost:5173")
 ARTIFACTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "artifacts"))
 
+# Keywords that indicate an input is for user content entry
+INPUT_KEYWORDS = ["todo", "task", "add", "search", "write", "enter", "message", "title", "name", "email", "text"]
+
 async def run_explorer() -> ExplorerSnapshot:
     start_time = datetime.now(timezone.utc)
     console_events = []
@@ -70,6 +73,10 @@ async def run_explorer() -> ExplorerSnapshot:
 
             # Navigate and wait for interactive
             await page.goto(TARGET_APP_URL, wait_until="networkidle")
+            
+            # Wait for React hydration - inputs may be readonly initially
+            await page.wait_for_timeout(1000)
+            
             page_title = await page.title()
             current_url = page.url
             
@@ -79,7 +86,7 @@ async def run_explorer() -> ExplorerSnapshot:
             if os.path.exists(before_path):
                 screenshots.append(ScreenshotReference(name="before", path=before_path))
 
-            # DOM Discovery
+            # DOM Discovery - include readonly and aria-disabled attributes
             raw_elements = await page.evaluate('''() => {
                 const interactives = Array.from(document.querySelectorAll('h1, h2, h3, a, button, input, textarea, select, form, [role="button"], [role="checkbox"], [tabindex], div[class*="cursor-pointer"]'));
                 return interactives.map((el, index) => {
@@ -91,9 +98,11 @@ async def run_explorer() -> ExplorerSnapshot:
                         element_type: type,
                         visible_label: label.trim().substring(0, 50),
                         selector: '[data-explorer-id="element-' + index + '"]',
-                        is_enabled: !el.disabled,
+                        is_enabled: !el.disabled && el.getAttribute('aria-disabled') !== 'true',
                         is_visible: el.offsetWidth > 0 && el.offsetHeight > 0,
-                        role: el.getAttribute('role') || null
+                        is_readonly: el.hasAttribute('readonly'),
+                        role: el.getAttribute('role') || null,
+                        placeholder: el.getAttribute('placeholder') || ''
                     };
                 });
             }''')
@@ -116,25 +125,82 @@ async def run_explorer() -> ExplorerSnapshot:
             logger.info("elements_discovered", count=len(discovered_elements))
 
             # Journey Discovery & Execution
-            input_el = next((e for e in discovered_elements if e.element_type == "input" and e.is_visible), None)
+            # Find candidate editable inputs - filter out readonly, disabled, and aria-disabled
+            input_candidates = [
+                e for e in discovered_elements 
+                if e.element_type == "input" 
+                and e.is_visible 
+                and e.is_enabled
+                and not e.is_readonly
+            ]
+            
+            # Rank candidates by placeholder relevance
+            def rank_input(el):
+                placeholder_lower = el.placeholder.lower() if el.placeholder else ""
+                for keyword in INPUT_KEYWORDS:
+                    if keyword in placeholder_lower:
+                        return 0  # High priority
+                return 1  # Lower priority
+            
+            input_candidates.sort(key=rank_input)
+            
+            logger.info(f"Found {len(input_candidates)} candidate editable inputs")
+            
+            # Find the first actually editable input
+            input_el = None
+            for i, candidate in enumerate(input_candidates):
+                locator = page.locator(candidate.selector)
+                try:
+                    # Check if element is actually editable using Playwright
+                    is_editable = await locator.is_editable(timeout=2000)
+                    is_visible = await locator.is_visible(timeout=2000)
+                    is_enabled = await locator.is_enabled(timeout=2000)
+                    
+                    logger.info(f"Candidate #{i+1}: editable={is_editable}, visible={is_visible}, enabled={is_enabled}, placeholder='{candidate.placeholder}'")
+                    
+                    if is_editable and is_visible and is_enabled:
+                        input_el = candidate
+                        logger.info(f"Selected candidate #{i+1}")
+                        break
+                except Exception as check_error:
+                    logger.info(f"Candidate #{i+1}: check failed - {check_error}")
+                    continue
             
             action_text = "Hackathon Test Todo"
             if input_el:
-                await page.fill(input_el.selector, action_text)
+                # Use locator for more reliable interaction
+                input_locator = page.locator(input_el.selector)
+                await input_locator.fill(action_text)
                 detected_journey.append(JourneyStep(
                     action="type_input",
                     target_selector=input_el.selector,
                     input_value=action_text
                 ))
+                logger.info("Typing into input", selector=input_el.selector, value=action_text)
                 
                 # Submit
                 submit_el = next((e for e in discovered_elements if e.element_type == "button" and e.is_visible and "add" in e.visible_label.lower()), None)
                 if submit_el:
-                    await page.click(submit_el.selector)
-                    detected_journey.append(JourneyStep(action="click_submit", target_selector=submit_el.selector))
+                    # Verify submit button is clickable
+                    submit_locator = page.locator(submit_el.selector)
+                    try:
+                        is_clickable = await submit_locator.is_enabled(timeout=2000) and await submit_locator.is_visible(timeout=2000)
+                        if is_clickable:
+                            await submit_locator.click()
+                            detected_journey.append(JourneyStep(action="click_submit", target_selector=submit_el.selector))
+                            logger.info("Clicked submit button", selector=submit_el.selector)
+                        else:
+                            await page.keyboard.press("Enter")
+                            detected_journey.append(JourneyStep(action="press_enter"))
+                            logger.info("Pressed Enter (submit not clickable)")
+                    except Exception:
+                        await page.keyboard.press("Enter")
+                        detected_journey.append(JourneyStep(action="press_enter"))
+                        logger.info("Pressed Enter (submit check failed)")
                 else:
                     await page.keyboard.press("Enter")
                     detected_journey.append(JourneyStep(action="press_enter"))
+                    logger.info("Pressed Enter (no submit button)")
 
                 # Wait for potential async state update
                 await page.wait_for_timeout(2500)
@@ -149,10 +215,19 @@ async def run_explorer() -> ExplorerSnapshot:
                 
                 checkbox_sel = 'div[class*="cursor-pointer"][data-explorer-after], [role="checkbox"][data-explorer-after]'
                 try:
-                    await page.click(checkbox_sel, timeout=1000)
-                    detected_journey.append(JourneyStep(action="toggle_checkbox", target_selector=checkbox_sel))
+                    checkbox_locator = page.locator(checkbox_sel).first
+                    is_clickable = await checkbox_locator.is_visible(timeout=1000)
+                    if is_clickable:
+                        await checkbox_locator.click(timeout=1000)
+                        detected_journey.append(JourneyStep(action="toggle_checkbox", target_selector=checkbox_sel))
+                        logger.info("Clicked checkbox")
                 except Exception:
                     logger.warning("no_checkbox_found_for_toggle")
+
+            else:
+                # No editable input found - graceful failure
+                runtime_evidence.evidence = "No editable input found after checking all candidates."
+                logger.warning("No editable input found for interaction")
 
             # Final wait
             await page.wait_for_timeout(1000)
@@ -172,7 +247,7 @@ async def run_explorer() -> ExplorerSnapshot:
             visual_change = f"'line-through' class {'was' if has_completed else 'was not'} detected on page."
             console_msg = f"{len(console_events)} console events recorded."
             network_msg = f"{len(network_failures)} network failures recorded."
-            el_state = "Checkbox clicked." if checkbox_sel else "Checkbox not found."
+            el_state = "Checkbox clicked." if input_el and 'checkbox_sel' in dir() else "No interaction performed."
             
             runtime_evidence = RuntimeEvidence(
                 expected_interaction="Add a new item and toggle it.",
