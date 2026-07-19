@@ -56,6 +56,14 @@ Do not include any other text. Output only the JSON object.
         
         full_prompt = f"{system_prompt}\n\n{user_prompt}\n\n{schema_instructions}"
         
+        # Log the full prompt for debugging (truncated to avoid huge logs)
+        logger.info(
+            "gemini_prompt",
+            model=LLM_MODEL,
+            prompt_length=len(full_prompt),
+            available_files_in_prompt="AVAILABLE REPOSITORY FILES" in full_prompt
+        )
+        
         response = client.models.generate_content(
             model=LLM_MODEL,
             contents=full_prompt,

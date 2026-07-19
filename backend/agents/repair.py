@@ -46,23 +46,26 @@ def validate_syntax(file_path: str) -> bool:
 def _find_closest_file(requested_path: str, available_files: List[str]) -> Optional[str]:
     """
     Find the closest matching file from available files using fuzzy matching.
-    Compares basenames and paths.
+    Compares basenames and paths. Also handles extension mismatches (e.g., .jsx -> .tsx).
     """
     if not available_files:
         return None
     
     requested_basename = os.path.basename(requested_path)
+    requested_name_no_ext = os.path.splitext(requested_basename)[0]
     best_match = None
     best_score = 0.0
     
     for available in available_files:
         available_basename = os.path.basename(available)
+        available_name_no_ext = os.path.splitext(available_basename)[0]
         
-        # Check extension match
-        if os.path.splitext(requested_basename)[1] != os.path.splitext(available_basename)[1]:
-            continue
+        # Check if basenames match (ignoring extension)
+        if requested_name_no_ext.lower() == available_name_no_ext.lower():
+            # Exact basename match - this is the best we can do
+            return available
         
-        # Fuzzy match on basename
+        # Fuzzy match on basename (ignoring extension)
         score = SequenceMatcher(None, requested_basename.lower(), available_basename.lower()).ratio()
         if score > best_score:
             best_score = score
@@ -155,6 +158,9 @@ async def generate_repair(analysis: AnalysisSnapshot) -> RepairSnapshot:
     
     # Build list of available files from repair_context
     available_files = repair_ctx.target_files if repair_ctx.target_files else []
+    
+    # Log the available files for debugging
+    logger.info("repair_available_files", count=len(available_files), files=available_files)
             
     system_prompt = """You are the Principal Software Engineer (Codex Repair Agent) for FrontendPilot AI.
 You receive an Analysis Snapshot containing the root cause of a UI bug and specific repair objectives.
@@ -189,7 +195,7 @@ AVAILABLE REPOSITORY FILES (USE ONLY THESE):
 Generate the required RepairSnapshot to fix this issue.
 """
 
-    logger.info("requesting_repair_from_llm")
+    logger.info("requesting_repair_from_llm", available_files_count=len(available_files))
     
     try:
         return await call_llm(system_prompt, user_prompt, RepairSnapshot)
@@ -207,10 +213,19 @@ async def execute_repair_pipeline(analysis: AnalysisSnapshot):
     logger.info("starting_repair_pipeline")
     repair_snapshot = await generate_repair(analysis)
     
-    logger.info("repair_generated", target_file=repair_snapshot.target_file, confidence=repair_snapshot.repair_confidence)
-    
     # Get available files from repair context for validation
     available_files = analysis.repair_context.target_files if analysis.repair_context.target_files else []
+    
+    # Log detailed file resolution info
+    logger.info(
+        "repair_file_resolution",
+        requested=repair_snapshot.target_file,
+        available=available_files,
+        exists=os.path.exists(repair_snapshot.target_file),
+        in_available=repair_snapshot.target_file in available_files
+    )
+    
+    logger.info("repair_generated", target_file=repair_snapshot.target_file, confidence=repair_snapshot.repair_confidence)
     
     # Apply patch
     try:
