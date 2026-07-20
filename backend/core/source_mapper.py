@@ -3,6 +3,7 @@ import sys
 import json
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
+import structlog
 
 import tree_sitter
 import tree_sitter_typescript
@@ -10,6 +11,8 @@ import tree_sitter_typescript
 # Add core to path if running standalone
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from core.schemas import SourceSnapshot, CandidateFile, CandidateComponent, CandidateNode, ExplorerSnapshot
+
+logger = structlog.get_logger()
 
 TARGET_APP_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "target-app", "src"))
 
@@ -23,15 +26,29 @@ class SourceMapper:
 
     def _walk_files(self) -> List[str]:
         tsx_files = []
+        
+        # Log repository root
+        logger.info("source_mapper_init", src_dir=self.src_dir, cwd=os.getcwd())
+        
         if not os.path.exists(self.src_dir):
-            import structlog
-            logger = structlog.get_logger()
             logger.warning("source_mapper_src_dir_not_found", src_dir=self.src_dir)
             return tsx_files
-        for root, _, files in os.walk(self.src_dir):
+        
+        for root, dirs, files in os.walk(self.src_dir):
+            # Log each directory visited
+            logger.info("source_mapper_visited_dir", dir=root, file_count=len(files))
+            
             for file in files:
+                file_path = os.path.join(root, file)
+                
+                # Log every file discovered
                 if file.endswith('.tsx') or file.endswith('.ts'):
-                    tsx_files.append(os.path.join(root, file))
+                    tsx_files.append(file_path)
+                    logger.info("source_mapper_file_accepted", file=file_path, reason="extension_match")
+                else:
+                    logger.info("source_mapper_file_rejected", file=file_path, reason="extension_filter")
+        
+        logger.info("source_mapper_walk_complete", total_files=len(tsx_files))
         return tsx_files
 
     def _extract_text(self, node: tree_sitter.Node, source_bytes: bytes) -> str:
@@ -71,12 +88,9 @@ class SourceMapper:
         files = self._walk_files()
         candidate_files_map = {}
 
-        # Log for debugging
-        import structlog
-        logger = structlog.get_logger()
-        logger.info("source_mapper_walk_files", src_dir=self.src_dir, files_found=len(files), files=files)
-
         query_label_lower = target_label.lower() if target_label else ""
+        
+        logger.info("source_mapper_query", target_label=target_label, target_element_type=target_element_type)
 
         for file_path in files:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -143,6 +157,7 @@ class SourceMapper:
             file_matches = walk_ast(tree.root_node)
             
             if file_matches:
+                logger.info("source_mapper_file_matched", file=file_path, matches=len(file_matches))
                 comps_map = {}
                 for fm in file_matches:
                     cname = fm['component']
@@ -167,9 +182,18 @@ class SourceMapper:
                     components=candidate_components,
                     heuristic_confidence=file_highest_conf
                 )
+            else:
+                logger.info("source_mapper_file_no_match", file=file_path)
                 
         # Sort files by confidence
         sorted_files = sorted(candidate_files_map.values(), key=lambda x: x.heuristic_confidence, reverse=True)
+        
+        logger.info(
+            "source_mapper_final_summary",
+            total_files_discovered=len(files),
+            candidate_files_count=len(sorted_files),
+            candidate_files=[f.file_path for f in sorted_files]
+        )
         
         return SourceSnapshot(
             target_observation=f"Element type: {target_element_type}, Label: {target_label}",
