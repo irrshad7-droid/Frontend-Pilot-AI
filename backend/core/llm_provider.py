@@ -1,4 +1,5 @@
 import os
+import asyncio
 import structlog
 from typing import Type, TypeVar, Optional
 from pydantic import BaseModel
@@ -11,6 +12,10 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.5-flash")
+
+# Transient error codes that should be retried
+TRANSIENT_ERROR_CODES = [500, 502, 503, 504]
+MAX_RETRIES = 3
 
 
 class LLMError(Exception):
@@ -35,61 +40,98 @@ async def call_llm(system_prompt: str, user_prompt: str, response_format: Type[T
         raise LLMError(f"Unknown provider: {LLM_PROVIDER}", LLM_PROVIDER, "config")
 
 
+def _is_transient_error(error_msg: str) -> bool:
+    """Check if error is a transient server error that should be retried."""
+    error_lower = error_msg.lower()
+    for code in TRANSIENT_ERROR_CODES:
+        if f"{code}" in error_lower or f"unavailable" in error_lower:
+            return True
+    return False
+
+
 async def _call_gemini(system_prompt: str, user_prompt: str, response_format: Type[T]) -> T:
-    """Call Google Gemini with structured output."""
+    """Call Google Gemini with structured output and retry logic."""
     if not GOOGLE_API_KEY:
         raise LLMError("GOOGLE_API_KEY not set", "gemini", "config")
     
-    try:
-        from google import genai
-        from google.genai import types
-        
-        client = genai.Client(api_key=GOOGLE_API_KEY)
-        
-        # Build the prompt with schema instructions
-        schema_instructions = f"""
+    # Build the prompt with schema instructions
+    schema_instructions = f"""
 Respond with valid JSON matching this schema:
 {response_format.model_json_schema()}
 
 Do not include any other text. Output only the JSON object.
 """
-        
-        full_prompt = f"{system_prompt}\n\n{user_prompt}\n\n{schema_instructions}"
-        
-        # Log the full prompt for debugging (truncated to avoid huge logs)
-        logger.info(
-            "gemini_prompt",
-            model=LLM_MODEL,
-            prompt_length=len(full_prompt),
-            available_files_in_prompt="AVAILABLE REPOSITORY FILES" in full_prompt
-        )
-        
-        response = client.models.generate_content(
-            model=LLM_MODEL,
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=response_format,
-            )
-        )
-        
-        # Parse the response
-        if response.text:
-            return response_format.model_validate_json(response.text)
-        else:
-            raise LLMError("Empty response from Gemini", "gemini", "empty_response")
+    
+    full_prompt = f"{system_prompt}\n\n{user_prompt}\n\n{schema_instructions}"
+    
+    # Log the full prompt for debugging (truncated to avoid huge logs)
+    logger.info(
+        "gemini_prompt",
+        model=LLM_MODEL,
+        prompt_length=len(full_prompt),
+        available_files_in_prompt="AVAILABLE REPOSITORY FILES" in full_prompt
+    )
+    
+    last_error = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            from google import genai
+            from google.genai import types
             
-    except ImportError:
-        raise LLMError("google-genai package not installed", "gemini", "import")
-    except Exception as e:
-        error_msg = str(e).lower()
-        if "quota" in error_msg or "rate" in error_msg:
-            error_type = "rate_limit"
-        elif "api_key" in error_msg or "unauthorized" in error_msg:
-            error_type = "auth"
-        else:
+            client = genai.Client(api_key=GOOGLE_API_KEY)
+            
+            logger.info(f"gemini_request_attempt", attempt=attempt)
+            
+            response = client.models.generate_content(
+                model=LLM_MODEL,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=response_format,
+                )
+            )
+            
+            # Parse the response
+            if response.text:
+                logger.info("gemini_request_success", attempt=attempt)
+                return response_format.model_validate_json(response.text)
+            else:
+                raise LLMError("Empty response from Gemini", "gemini", "empty_response")
+                
+        except ImportError:
+            raise LLMError("google-genai package not installed", "gemini", "import")
+        except Exception as e:
+            error_msg = str(e)
+            last_error = e
+            
+            # Check if this is a transient error
+            if _is_transient_error(error_msg) and attempt < MAX_RETRIES:
+                wait_time = 2 ** (attempt - 1)  # Exponential backoff: 1, 2, 4 seconds
+                logger.warning(
+                    "gemini_request_retry",
+                    attempt=attempt,
+                    error=error_msg,
+                    wait_seconds=wait_time
+                )
+                await asyncio.sleep(wait_time)
+                continue
+            
+            # Non-transient error or exhausted retries
             error_type = "api"
-        raise LLMError(str(e), "gemini", error_type)
+            if "quota" in error_msg.lower() or "rate" in error_msg.lower():
+                error_type = "rate_limit"
+            elif "api_key" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                error_type = "auth"
+            elif "not found" in error_msg.lower() or "404" in error_msg.lower():
+                error_type = "not_found"
+            
+            if attempt >= MAX_RETRIES:
+                error_type = "unavailable"
+            
+            raise LLMError(error_msg, "gemini", error_type)
+    
+    # Should not reach here, but just in case
+    raise LLMError(f"Gemini unavailable after {MAX_RETRIES} attempts", "gemini", "unavailable")
 
 
 async def _call_openai(system_prompt: str, user_prompt: str, response_format: Type[T]) -> T:
@@ -115,11 +157,10 @@ async def _call_openai(system_prompt: str, user_prompt: str, response_format: Ty
         return completion.choices[0].message.parsed
         
     except Exception as e:
-        error_msg = str(e).lower()
-        if "quota" in error_msg or "rate" in error_msg:
+        error_msg = str(e)
+        error_type = "api"
+        if "quota" in error_msg.lower() or "rate" in error_msg.lower():
             error_type = "rate_limit"
-        elif "api_key" in error_msg or "unauthorized" in error_msg:
+        elif "api_key" in error_msg.lower() or "unauthorized" in error_msg.lower():
             error_type = "auth"
-        else:
-            error_type = "api"
-        raise LLMError(str(e), "openai", error_type)
+        raise LLMError(error_msg, "openai", error_type)
