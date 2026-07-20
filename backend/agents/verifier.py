@@ -111,8 +111,31 @@ async def _generate_dynamic_verification(explorer_snapshot: ExplorerSnapshot, re
             VerificationAction(action="assert_visible", selector="body"),
         ]
     
-    # If the target file is App.tsx, use the original handoff
-    return handoff.verification_steps
+    # If the target file is App.tsx, use the original handoff but with scoped selectors
+    # The handoff uses placeholder selectors which can match multiple elements
+    # We need to use the Explorer's discovered elements for the main input
+    scoped_steps = []
+    for step in handoff.verification_steps:
+        if "placeholder" in step.selector and "input" in step.selector:
+            # Find the matching element from Explorer's discovered elements
+            for el in explorer_snapshot.discovered_elements:
+                if el.element_type == "input" and not el.is_readonly:
+                    # Use the exact selector from Explorer
+                    scoped_steps.append(VerificationAction(
+                        action=step.action,
+                        selector=el.selector,
+                        value=step.value,
+                        expected=step.expected
+                    ))
+                    logger.info("verifier_scoped_selector", original=step.selector, scoped=el.selector)
+                    break
+            else:
+                # No matching element found, keep original step
+                scoped_steps.append(step)
+        else:
+            scoped_steps.append(step)
+    
+    return scoped_steps
 
 async def verify_repair(explorer_snapshot: ExplorerSnapshot, repair_snapshot: RepairSnapshot) -> VerificationSnapshot:
     """
