@@ -76,10 +76,43 @@ def _find_closest_file(requested_path: str, available_files: List[str]) -> Optio
         return best_match
     return None
 
+def _normalize_text(text: str) -> str:
+    """Normalize text for comparison: normalize line endings, strip trailing whitespace."""
+    return text.replace('\r\n', '\n').replace('\r', '\n').strip()
+
+def _find_fuzzy_match(content: str, search_block: str, threshold: float = 0.95) -> Optional[tuple]:
+    """
+    Find a fuzzy match for search_block in content.
+    Returns (matched_text, start_pos, end_pos, similarity) or None.
+    """
+    search_lines = _normalize_text(search_block).split('\n')
+    content_lines = _normalize_text(content).split('\n')
+    
+    if len(search_lines) == 0:
+        return None
+    
+    best_match = None
+    best_score = 0.0
+    
+    # Try to find the search block as a sequence of consecutive lines
+    for i in range(len(content_lines) - len(search_lines) + 1):
+        candidate_lines = content_lines[i:i + len(search_lines)]
+        candidate = '\n'.join(candidate_lines)
+        
+        score = SequenceMatcher(None, search_block, candidate).ratio()
+        if score > best_score:
+            best_score = score
+            best_match = (candidate, i, i + len(search_lines), score)
+    
+    if best_score >= threshold:
+        return best_match
+    return None
+
 def apply_patch_with_rollback(target_file: str, diffs: List[DiffBlock], available_files: List[str] = None) -> bool:
     """
     Validates and applies the patch. If validation fails, raises an exception and rolls back.
     If target_file doesn't exist, attempts to find closest match from available_files.
+    Uses fuzzy matching for search blocks that don't match exactly.
     """
     # Check if file exists, attempt recovery if not
     if not os.path.exists(target_file):
@@ -114,22 +147,38 @@ def apply_patch_with_rollback(target_file: str, diffs: List[DiffBlock], availabl
     for diff in diffs:
         # 1. search block exists exactly once
         count = new_content.count(diff.search_block)
-        if count == 0:
-            raise PatchValidationError(f"search_block not found in file. Block:\n{diff.search_block}")
-        if count > 1:
-            raise PatchValidationError("search_block found multiple times (ambiguous patch).")
-            
-        # 2. replace block is not empty
-        if not diff.replace_block.strip():
-            logger.warning("replace_block_empty", file=target_file)
-            
-        # 3. differs from search block
-        if diff.search_block == diff.replace_block:
-            raise PatchValidationError("replace_block is identical to search_block (no-op).")
-            
-        # Apply the replacement
-        new_content = new_content.replace(diff.search_block, diff.replace_block)
         
+        if count == 0:
+            # Try fuzzy matching
+            fuzzy_result = _find_fuzzy_match(new_content, diff.search_block)
+            if fuzzy_result:
+                matched_text, start_line, end_line, similarity = fuzzy_result
+                logger.info(
+                    "patch_fuzzy_match_found",
+                    similarity=f"{similarity:.2%}",
+                    start_line=start_line,
+                    end_line=end_line,
+                    search_block_preview=diff.search_block[:100] + "..." if len(diff.search_block) > 100 else diff.search_block
+                )
+                # Use the matched text for replacement
+                new_content = new_content.replace(matched_text, diff.replace_block)
+                continue  # Skip the rest of the loop
+            else:
+                logger.error(
+                    "patch_no_match_found",
+                    search_block=diff.search_block,
+                    file=target_file
+                )
+                raise PatchValidationError(f"search_block not found in file. Block:\n{diff.search_block}")
+        elif count > 1:
+            raise PatchValidationError("search_block found multiple times (ambiguous patch).")
+        else:
+            # Exact match found
+            logger.info("patch_exact_match_found", search_block_preview=diff.search_block[:100] + "..." if len(diff.search_block) > 100 else diff.search_block)
+            # Apply the replacement
+            new_content = new_content.replace(diff.search_block, diff.replace_block)
+            continue  # Skip the rest of the loop
+            
     # Write to disk
     with open(target_file, "w") as f:
         f.write(new_content)
