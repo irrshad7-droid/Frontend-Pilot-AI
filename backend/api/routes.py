@@ -13,7 +13,8 @@ from pydantic import BaseModel
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from orchestrator import Orchestrator
-from core.schemas import PipelineExecutionSnapshot
+from core.schemas import PipelineExecutionSnapshot, ProviderStatusResponse
+from core.llm_provider import get_provider_status
 
 router = APIRouter()
 
@@ -153,3 +154,10 @@ async def get_artifact(filename: str):
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Artifact not found.")
     return FileResponse(file_path)
+
+
+@router.get("/providers/status", response_model=ProviderStatusResponse)
+async def get_providers_status():
+    """Return the status of all configured LLM providers."""
+    status = await get_provider_status()
+    return ProviderStatusResponse(providers=status)

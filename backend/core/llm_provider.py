@@ -27,17 +27,92 @@ class LLMError(Exception):
         super().__init__(f"[{provider}] {error_type}: {message}")
 
 
+# Provider priority order for failover
+PROVIDER_PRIORITY = ["gemini", "openai"]
+
 async def call_llm(system_prompt: str, user_prompt: str, response_format: Type[T]) -> T:
     """
-    Unified LLM call that supports multiple providers.
+    Unified LLM call that supports multiple providers with failover.
     Returns parsed Pydantic model or raises LLMError.
     """
-    if LLM_PROVIDER == "gemini":
-        return await _call_gemini(system_prompt, user_prompt, response_format)
-    elif LLM_PROVIDER == "openai":
-        return await _call_openai(system_prompt, user_prompt, response_format)
+    # Try providers in priority order
+    for provider in PROVIDER_PRIORITY:
+        if provider == "gemini" and GOOGLE_API_KEY:
+            try:
+                return await _call_gemini(system_prompt, user_prompt, response_format)
+            except LLMError as e:
+                if e.error_type == "quota_exhausted":
+                    logger.warning("provider_quota_exhausted_failing_over", provider=provider, error=str(e))
+                    continue  # Try next provider
+                raise
+        elif provider == "openai" and OPENAI_API_KEY:
+            try:
+                return await _call_openai(system_prompt, user_prompt, response_format)
+            except LLMError as e:
+                if e.error_type == "quota_exhausted":
+                    logger.warning("provider_quota_exhausted_failing_over", provider=provider, error=str(e))
+                    continue  # Try next provider
+                raise
+    
+    raise LLMError("No available providers. Configure GOOGLE_API_KEY or OPENAI_API_KEY.", "all", "config")
+
+async def get_provider_status() -> dict:
+    """
+    Check the status of all configured providers.
+    Returns a dict of provider_name -> ProviderStatus.
+    """
+    from core.schemas import ProviderStatus
+    
+    status = {}
+    
+    # Check Gemini
+    if GOOGLE_API_KEY:
+        try:
+            from google import genai
+            client = genai.Client(api_key=GOOGLE_API_KEY)
+            # Try a minimal request to check quota
+            client.models.generate_content(
+                model=LLM_MODEL,
+                contents="test",
+                config=types.GenerateContentConfig(response_mime_type="text/plain")
+            )
+            status["gemini"] = ProviderStatus(available=True, model=LLM_MODEL)
+        except LLMError as e:
+            if e.error_type == "quota_exhausted":
+                quota_info = _extract_quota_info(e.message)
+                status["gemini"] = ProviderStatus(
+                    available=False,
+                    reason="quota_exhausted",
+                    model=LLM_MODEL,
+                    retry_delay_seconds=quota_info.get("retry_delay_seconds")
+                )
+            else:
+                status["gemini"] = ProviderStatus(available=False, reason=e.error_type, model=LLM_MODEL)
+        except Exception as e:
+            status["gemini"] = ProviderStatus(available=False, reason=str(e), model=LLM_MODEL)
     else:
-        raise LLMError(f"Unknown provider: {LLM_PROVIDER}", LLM_PROVIDER, "config")
+        status["gemini"] = ProviderStatus(available=False, reason="api_key_not_configured")
+    
+    # Check OpenAI
+    if OPENAI_API_KEY:
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+            # Try a minimal request to check status
+            await client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=[{"role": "user", "content": "test"}],
+                max_tokens=1
+            )
+            status["openai"] = ProviderStatus(available=True, model=LLM_MODEL)
+        except LLMError as e:
+            status["openai"] = ProviderStatus(available=False, reason=e.error_type, model=LLM_MODEL)
+        except Exception as e:
+            status["openai"] = ProviderStatus(available=False, reason=str(e), model=LLM_MODEL)
+    else:
+        status["openai"] = ProviderStatus(available=False, reason="api_key_not_configured")
+    
+    return status
 
 
 def _is_transient_error(error_msg: str) -> bool:

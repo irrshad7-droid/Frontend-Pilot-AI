@@ -155,8 +155,30 @@ class VerificationObservedResults(BaseModel):
     console_events: List[str]
     network_failures: List[str]
 
+# ---------------------------------------------------------------------------
+# Pipeline Result Enum
+# ---------------------------------------------------------------------------
+
+class PipelineResult(str):
+    SUCCESS = "success"
+    FAILED = "failed"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    PROVIDER_QUOTA_EXHAUSTED = "provider_quota_exhausted"
+    USER_CONFIGURATION_ERROR = "user_configuration_error"
+    PATCH_FAILED = "patch_failed"
+    VERIFICATION_FAILED = "verification_failed"
+
+class ProviderStatus(BaseModel):
+    available: bool
+    reason: Optional[str] = None
+    model: Optional[str] = None
+    retry_delay_seconds: Optional[int] = None
+
+class ProviderStatusResponse(BaseModel):
+    providers: dict  # provider_name -> ProviderStatus
+
 class VerificationSnapshot(BaseModel):
-    verification_status: Literal["Passed", "Failed", "Inconclusive"]
+    verification_status: str
     executed_steps: List[VerificationAction]
     observed_results: VerificationObservedResults
     regressions_detected: List[str]
