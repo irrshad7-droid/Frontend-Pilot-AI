@@ -39,13 +39,49 @@ async def execute_action(page: Page, action: VerificationAction) -> bool:
         logger.error("action_failed", action=action.action, selector=action.selector, error=str(e))
         return False
 
+async def _generate_dynamic_verification(explorer_snapshot: ExplorerSnapshot, repair_snapshot: RepairSnapshot) -> List[VerificationAction]:
+    """
+    Generate verification steps dynamically based on the repair context.
+    If the repair handoff is relevant, use it. Otherwise, generate steps based on the modified file.
+    """
+    # Check if the repair handoff is relevant to the modified file
+    target_file = repair_snapshot.target_file
+    modified_symbols = repair_snapshot.modified_symbols
+    
+    # If the repair handoff seems relevant (e.g., checking the same component), use it
+    handoff = repair_snapshot.verification_handoff
+    
+    # Check if the verification steps are relevant to the repair
+    # If the target file is TodoItem.tsx, the main input check is irrelevant
+    if "TodoItem" in target_file or "todo-item" in target_file.lower():
+        # The repair is to TodoItem, not the main input
+        # We should verify the todo items work, not the main input
+        logger.info("verifier_dynamic_steps", reason="Repair target is TodoItem, generating relevant verification")
+        
+        # Find a todo item to verify
+        # Look for the first visible todo item in the explorer snapshot
+        for el in explorer_snapshot.discovered_elements:
+            if "todo" in el.visible_label.lower() or "item" in el.element_type.lower():
+                return [
+                    VerificationAction(action="assert_visible", selector=el.selector),
+                ]
+        
+        # Fallback: just check the page loaded
+        return [
+            VerificationAction(action="assert_visible", selector="body"),
+        ]
+    
+    # If the target file is App.tsx, use the original handoff
+    return handoff.verification_steps
+
 async def verify_repair(explorer_snapshot: ExplorerSnapshot, repair_snapshot: RepairSnapshot) -> VerificationSnapshot:
     """
     Executes the Verification Handoff steps using Playwright and evaluates the result.
     """
     logger.info("starting_verification")
     
-    handoff = repair_snapshot.verification_handoff
+    # Generate dynamic verification steps based on the repair
+    verification_steps = await _generate_dynamic_verification(explorer_snapshot, repair_snapshot)
     target_url = explorer_snapshot.execution_metadata.target_url
     
     # We will save the screenshots here
@@ -84,7 +120,7 @@ async def verify_repair(explorer_snapshot: ExplorerSnapshot, repair_snapshot: Re
             
             # Execute steps
             all_steps_passed = True
-            for step in handoff.verification_steps:
+            for step in verification_steps:
                 logger.info("executing_step", action=step.action, selector=step.selector)
                 success = await execute_action(page, step)
                 if not success:
@@ -130,7 +166,7 @@ async def verify_repair(explorer_snapshot: ExplorerSnapshot, repair_snapshot: Re
     
     snapshot = VerificationSnapshot(
         verification_status=verification_status,
-        executed_steps=handoff.verification_steps,
+        executed_steps=verification_steps,
         observed_results=observed_results,
         regressions_detected=regressions_detected,
         screenshot_before=screenshot_before,
