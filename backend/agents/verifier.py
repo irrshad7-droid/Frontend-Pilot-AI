@@ -74,66 +74,64 @@ async def execute_action(page: Page, action: VerificationAction) -> bool:
 async def _generate_dynamic_verification(explorer_snapshot: ExplorerSnapshot, repair_snapshot: RepairSnapshot) -> List[VerificationAction]:
     """
     Generate verification steps dynamically based on the repair context.
-    If the repair handoff is relevant, use it. Otherwise, generate steps based on the modified file.
+    Maps generic selectors from the repair handoff to unique data-explorer-id selectors.
     """
-    # Check if the repair handoff is relevant to the modified file
-    target_file = repair_snapshot.target_file
-    modified_symbols = repair_snapshot.modified_symbols
-    
     # Log the repair context for debugging
     logger.info(
         "verifier_repair_context",
-        target_file=target_file,
-        modified_symbols=modified_symbols,
+        target_file=repair_snapshot.target_file,
+        modified_symbols=repair_snapshot.modified_symbols,
         handoff_steps=len(repair_snapshot.verification_handoff.verification_steps)
     )
     
-    # If the repair handoff seems relevant (e.g., checking the same component), use it
     handoff = repair_snapshot.verification_handoff
     
-    # Check if the verification steps are relevant to the repair
-    # If the target file is TodoItem.tsx, the main input check is irrelevant
-    if "TodoItem" in target_file or "todo-item" in target_file.lower():
-        # The repair is to TodoItem, not the main input
-        # We should verify the todo items work, not the main input
-        logger.info("verifier_dynamic_steps", reason="Repair target is TodoItem, generating relevant verification")
-        
-        # Find a todo item to verify
-        # Look for the first visible todo item in the explorer snapshot
-        for el in explorer_snapshot.discovered_elements:
-            if "todo" in el.visible_label.lower() or "item" in el.element_type.lower():
-                return [
-                    VerificationAction(action="assert_visible", selector=el.selector),
-                ]
-        
-        # Fallback: just check the page loaded
-        return [
-            VerificationAction(action="assert_visible", selector="body"),
-        ]
+    # Build a mapping of generic selectors to unique data-explorer-id selectors
+    # The Explorer assigns unique data-explorer-id attributes to each element
+    # We use these unique selectors to avoid Playwright strict mode violations
+    # IMPORTANT: We only map non-readonly inputs to avoid demo scene conflicts
+    element_map = {}
+    for el in explorer_snapshot.discovered_elements:
+        # Map by placeholder, label, or other identifying attributes
+        # Only map non-readonly inputs to avoid demo scene conflicts
+        if el.element_type == "input" and not el.is_readonly:
+            if el.placeholder and el.placeholder.strip():
+                key = f"placeholder:{el.placeholder}"
+                if key not in element_map:
+                    element_map[key] = el.selector
+        if el.visible_label and el.visible_label.strip():
+            key = f"label:{el.visible_label.lower()}"
+            if key not in element_map:
+                element_map[key] = el.selector
     
-    # If the target file is App.tsx, use the original handoff but with scoped selectors
-    # The handoff uses placeholder selectors which can match multiple elements
-    # We need to use the Explorer's discovered elements for the main input
+    logger.info("verifier_element_map", count=len(element_map), keys=list(element_map.keys()))
+    
+    # Map handoff selectors to unique selectors
     scoped_steps = []
     for step in handoff.verification_steps:
-        if "placeholder" in step.selector and "input" in step.selector:
-            # Find the matching element from Explorer's discovered elements
-            for el in explorer_snapshot.discovered_elements:
-                if el.element_type == "input" and not el.is_readonly:
-                    # Use the exact selector from Explorer
+        original_selector = step.selector
+        
+        # Check if this is a generic selector that needs scoping
+        if "placeholder=" in step.selector:
+            # Extract placeholder value
+            import re
+            match = re.search(r'placeholder="([^"]+)"', step.selector)
+            if match:
+                placeholder = match.group(1)
+                key = f"placeholder:{placeholder}"
+                if key in element_map:
+                    scoped_selector = element_map[key]
                     scoped_steps.append(VerificationAction(
                         action=step.action,
-                        selector=el.selector,
+                        selector=scoped_selector,
                         value=step.value,
                         expected=step.expected
                     ))
-                    logger.info("verifier_scoped_selector", original=step.selector, scoped=el.selector)
-                    break
-            else:
-                # No matching element found, keep original step
-                scoped_steps.append(step)
-        else:
-            scoped_steps.append(step)
+                    logger.info("verifier_scoped_selector", original=original_selector, scoped=scoped_selector)
+                    continue
+        
+        # Keep original step if no mapping found
+        scoped_steps.append(step)
     
     return scoped_steps
 
