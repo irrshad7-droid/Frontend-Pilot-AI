@@ -48,6 +48,33 @@ def _is_transient_error(error_msg: str) -> bool:
             return True
     return False
 
+def _is_quota_exhausted(error_msg: str) -> bool:
+    """Check if error is a quota exhaustion error (non-retryable)."""
+    error_lower = error_msg.lower()
+    return "429" in error_lower or "resource_exhausted" in error_lower or "quota" in error_lower
+
+def _extract_quota_info(error_msg: str) -> dict:
+    """Extract quota information from error message if present."""
+    import re
+    info = {}
+    
+    # Try to extract retry delay
+    retry_match = re.search(r'retryDelay["\s:]+(\d+)', error_msg)
+    if retry_match:
+        info["retry_delay_seconds"] = int(retry_match.group(1))
+    
+    # Try to extract quota metric
+    metric_match = re.search(r'quotaMetric["\s:]+([^"]+)', error_msg)
+    if metric_match:
+        info["quota_metric"] = metric_match.group(1)
+    
+    # Try to extract quota id
+    id_match = re.search(r'quotaId["\s:]+([^"]+)', error_msg)
+    if id_match:
+        info["quota_id"] = id_match.group(1)
+    
+    return info
+
 
 async def _call_gemini(system_prompt: str, user_prompt: str, response_format: Type[T]) -> T:
     """Call Google Gemini with structured output and retry logic."""
@@ -103,6 +130,23 @@ Do not include any other text. Output only the JSON object.
         except Exception as e:
             error_msg = str(e)
             last_error = e
+            
+            # Check if this is a quota exhaustion error (non-retryable)
+            if _is_quota_exhausted(error_msg):
+                quota_info = _extract_quota_info(error_msg)
+                logger.error(
+                    "gemini_quota_exhausted",
+                    model=LLM_MODEL,
+                    quota_info=quota_info,
+                    error=error_msg
+                )
+                raise LLMError(
+                    f"Gemini daily free-tier quota exhausted. "
+                    f"Configure another provider or wait until quota resets. "
+                    f"Details: {error_msg}",
+                    "gemini",
+                    "quota_exhausted"
+                )
             
             # Check if this is a transient error
             if _is_transient_error(error_msg) and attempt < MAX_RETRIES:
