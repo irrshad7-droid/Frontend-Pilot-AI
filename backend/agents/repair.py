@@ -77,8 +77,39 @@ def _find_closest_file(requested_path: str, available_files: List[str]) -> Optio
     return None
 
 def _normalize_text(text: str) -> str:
-    """Normalize text for comparison: normalize line endings, strip trailing whitespace."""
-    return text.replace('\r\n', '\n').replace('\r', '\n').strip()
+    """Normalize text for comparison: normalize line endings, strip trailing whitespace, normalize indentation."""
+    # Normalize line endings
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    # Strip trailing whitespace from each line
+    lines = [line.rstrip() for line in text.split('\n')]
+    # Remove leading/trailing empty lines
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+    while lines and not lines[-1].strip():
+        lines = lines[:-1]
+    return '\n'.join(lines)
+
+def _find_normalized_match(content: str, search_block: str) -> Optional[tuple]:
+    """
+    Find a match after normalizing both search block and content.
+    Returns (matched_text, start_line, end_line, similarity) or None.
+    """
+    normalized_search = _normalize_text(search_block)
+    normalized_content = _normalize_text(content)
+    
+    if normalized_search in normalized_content:
+        # Find the position in the original content
+        search_lines = normalized_search.split('\n')
+        content_lines = normalized_content.split('\n')
+        
+        for i in range(len(content_lines) - len(search_lines) + 1):
+            if content_lines[i:i + len(search_lines)] == search_lines:
+                # Return the original content lines (not normalized)
+                original_lines = content.split('\n')
+                matched_original = '\n'.join(original_lines[i:i + len(search_lines)])
+                return (matched_original, i, i + len(search_lines), 1.0)
+    
+    return None
 
 def _find_fuzzy_match(content: str, search_block: str, threshold: float = 0.95) -> Optional[tuple]:
     """
@@ -102,7 +133,10 @@ def _find_fuzzy_match(content: str, search_block: str, threshold: float = 0.95) 
         score = SequenceMatcher(None, search_block, candidate).ratio()
         if score > best_score:
             best_score = score
-            best_match = (candidate, i, i + len(search_lines), score)
+            # Return the original content lines (not normalized)
+            original_lines = content.split('\n')
+            matched_original = '\n'.join(original_lines[i:i + len(search_lines)])
+            best_match = (matched_original, i, i + len(search_lines), score)
     
     if best_score >= threshold:
         return best_match
@@ -149,6 +183,21 @@ def apply_patch_with_rollback(target_file: str, diffs: List[DiffBlock], availabl
         count = new_content.count(diff.search_block)
         
         if count == 0:
+            # Try normalized match first
+            normalized_result = _find_normalized_match(new_content, diff.search_block)
+            if normalized_result:
+                matched_text, start_line, end_line, similarity = normalized_result
+                logger.info(
+                    "patch_normalized_match_found",
+                    similarity=f"{similarity:.2%}",
+                    start_line=start_line,
+                    end_line=end_line,
+                    search_block_preview=diff.search_block[:100] + "..." if len(diff.search_block) > 100 else diff.search_block
+                )
+                # Use the matched text for replacement
+                new_content = new_content.replace(matched_text, diff.replace_block)
+                continue  # Skip the rest of the loop
+            
             # Try fuzzy matching
             fuzzy_result = _find_fuzzy_match(new_content, diff.search_block)
             if fuzzy_result:
