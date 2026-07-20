@@ -76,12 +76,19 @@ class SourceMapper:
         target_label = "unknown"
         target_type = "unknown"
         for step in explorer_snapshot.detected_journey:
-            if step.action in ["click_submit", "click"]:
+            # Look for any interaction action (type_input, click_submit, click)
+            if step.action in ["click_submit", "click", "type_input"]:
                 for el in explorer_snapshot.discovered_elements:
                     if el.selector == step.target_selector:
                         target_label = el.visible_label
                         target_type = el.element_type
+                        logger.info("source_mapper_target_found", target_label=target_label, target_type=target_type)
                         break
+        
+        # Fallback: if no target found, return all source files
+        if target_label == "unknown":
+            logger.warning("source_mapper_unknown_target_fallback", reason="No matching action found in journey")
+        
         return self.find_candidates(target_label=target_label, target_element_type=target_type)
 
     def find_candidates(self, target_label: str, target_element_type: str = None) -> SourceSnapshot:
@@ -91,6 +98,27 @@ class SourceMapper:
         query_label_lower = target_label.lower() if target_label else ""
         
         logger.info("source_mapper_query", target_label=target_label, target_element_type=target_element_type)
+
+        # Fallback: if target is unknown, return all files as candidates
+        if target_label == "unknown" or not target_label:
+            logger.info("source_mapper_unknown_target_fallback", reason="Returning all source files as candidates")
+            for file_path in files:
+                candidate_files_map[file_path] = CandidateFile(
+                    file_path=file_path,
+                    components=[],
+                    heuristic_confidence=0.1
+                )
+            sorted_files = sorted(candidate_files_map.values(), key=lambda x: x.heuristic_confidence, reverse=True)
+            logger.info(
+                "source_mapper_final_summary",
+                total_files_discovered=len(files),
+                candidate_files_count=len(sorted_files),
+                candidate_files=[f.file_path for f in sorted_files]
+            )
+            return SourceSnapshot(
+                target_observation=f"Element type: {target_element_type}, Label: {target_label}",
+                candidate_files=sorted_files
+            )
 
         for file_path in files:
             with open(file_path, 'r', encoding='utf-8') as f:
