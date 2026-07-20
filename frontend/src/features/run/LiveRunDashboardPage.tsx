@@ -435,32 +435,34 @@ export function LiveRunDashboardPage({ runId }: Props) {
                 : "AI Agent is actively searching workspace..."}
             </h1>
 
-            {/* Target App Server info */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "16px",
-                fontSize: "13px",
-                color: "var(--text-secondary)",
-              }}
-            >
-              <span>
-                Target App:{" "}
-                <strong style={{ color: "var(--text)" }}>Todo App</strong>
-              </span>
-              <span style={{ color: "var(--border)" }}>|</span>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-              >
-                <ExternalLink size={12} /> URL:{" "}
-                <code>http://localhost:5173</code>
-              </span>
-            </div>
+             {/* Target App Server info */}
+             <div
+               style={{
+                 display: "flex",
+                 alignItems: "center",
+                 gap: "16px",
+                 fontSize: "13px",
+                 color: "var(--text-secondary)",
+               }}
+             >
+               <span>
+                 Target App:{" "}
+                 <strong style={{ color: "var(--text)" }}>
+                   {(data?.snapshot?.explorer_snapshot as any)?.page_summary?.title || "Unknown App"}
+                 </strong>
+               </span>
+               <span style={{ color: "var(--border)" }}>|</span>
+               <span
+                 style={{
+                   display: "inline-flex",
+                   alignItems: "center",
+                   gap: "4px",
+                 }}
+               >
+                 <ExternalLink size={12} /> URL:{" "}
+                 <code>{(data?.snapshot?.explorer_snapshot as any)?.page_url || "http://localhost:5173"}</code>
+               </span>
+             </div>
           </header>
 
           {/* Mobile responsive progress rail */}

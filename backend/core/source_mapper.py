@@ -23,6 +23,11 @@ class SourceMapper:
 
     def _walk_files(self) -> List[str]:
         tsx_files = []
+        if not os.path.exists(self.src_dir):
+            import structlog
+            logger = structlog.get_logger()
+            logger.warning("source_mapper_src_dir_not_found", src_dir=self.src_dir)
+            return tsx_files
         for root, _, files in os.walk(self.src_dir):
             for file in files:
                 if file.endswith('.tsx') or file.endswith('.ts'):
@@ -65,6 +70,11 @@ class SourceMapper:
     def find_candidates(self, target_label: str, target_element_type: str = None) -> SourceSnapshot:
         files = self._walk_files()
         candidate_files_map = {}
+
+        # Log for debugging
+        import structlog
+        logger = structlog.get_logger()
+        logger.info("source_mapper_walk_files", src_dir=self.src_dir, files_found=len(files), files=files)
 
         query_label_lower = target_label.lower() if target_label else ""
 
