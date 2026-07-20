@@ -270,7 +270,21 @@ async def generate_repair(analysis: AnalysisSnapshot) -> RepairSnapshot:
             "config"
         )
     
-    # Log the complete prompt for debugging
+    # Load file contents for the target file
+    file_contents = {}
+    for file_path in available_files:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                file_contents[file_path] = content
+                logger.info(
+                    "repair_file_content_loaded",
+                    file=file_path,
+                    chars=len(content)
+                )
+        except Exception as e:
+            logger.warning("repair_file_content_load_failed", file=file_path, error=str(e))
+    
     system_prompt = """You are the Principal Software Engineer (Codex Repair Agent) for FrontendPilot AI.
 You receive an Analysis Snapshot containing the root cause of a UI bug and specific repair objectives.
 Your job is to generate a surgical Search/Replace diff block to fix the bug.
@@ -288,6 +302,11 @@ Strict Constraints:
 5. Do NOT output markdown code blocks in the search_block or replace_block fields. Output the raw code.
 """
 
+    # Build file contents section
+    file_contents_section = "TARGET FILE CONTENTS:\n"
+    for file_path, content in file_contents.items():
+        file_contents_section += f"\n--- {file_path} ---\n{content}\n"
+    
     user_prompt = f"""
 ROOT CAUSE:
 {analysis.conclusion.root_cause}
@@ -301,8 +320,17 @@ TARGET CONTEXT SNIPPETS:
 AVAILABLE REPOSITORY FILES (USE ONLY THESE):
 {json.dumps(available_files, indent=2)}
 
+{file_contents_section}
+
 Generate the required RepairSnapshot to fix this issue.
 """
+    
+    logger.info(
+        "repair_prompt_built",
+        target_file=available_files[0] if available_files else "none",
+        num_files=len(available_files),
+        prompt_length=len(user_prompt)
+    )
     
     logger.info("requesting_repair_from_llm", available_files_count=len(available_files))
     
