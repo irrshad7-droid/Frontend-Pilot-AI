@@ -17,19 +17,51 @@ async def execute_action(page: Page, action: VerificationAction) -> bool:
     Returns True if successful, False if it failed (e.g., timeout).
     """
     try:
+        locator = page.locator(action.selector)
+        
+        # Log detailed state before the action
+        try:
+            is_visible = await locator.is_visible(timeout=1000)
+            is_attached = await locator.is_attached(timeout=1000)
+            is_enabled = await locator.is_enabled(timeout=1000)
+            is_editable = await locator.is_editable(timeout=1000)
+            logger.info(
+                "verifier_locator_state",
+                action=action.action,
+                selector=action.selector,
+                visible=is_visible,
+                attached=is_attached,
+                enabled=is_enabled,
+                editable=is_editable
+            )
+        except Exception as state_error:
+            logger.info(
+                "verifier_locator_state_check_failed",
+                action=action.action,
+                selector=action.selector,
+                error=str(state_error)
+            )
+        
         if action.action == "click":
-            await page.locator(action.selector).click(timeout=5000)
+            # Wait for element to be visible and enabled before clicking
+            await locator.wait_for(state="visible", timeout=5000)
+            await locator.wait_for(state="enabled", timeout=5000)
+            await locator.click(timeout=5000)
         elif action.action == "type":
-            await page.locator(action.selector).fill(action.value or "", timeout=5000)
+            # Wait for element to be visible, enabled, and editable before typing
+            await locator.wait_for(state="visible", timeout=5000)
+            await locator.wait_for(state="enabled", timeout=5000)
+            await locator.wait_for(state="editable", timeout=5000)
+            await locator.fill(action.value or "", timeout=5000)
         elif action.action == "assert_text":
-            text = await page.locator(action.selector).inner_text(timeout=5000)
+            text = await locator.inner_text(timeout=5000)
             if action.expected and action.expected not in text:
                 logger.warning("assert_text_failed", expected=action.expected, actual=text)
                 return False
         elif action.action == "assert_visible":
-            await page.locator(action.selector).wait_for(state="visible", timeout=5000)
+            await locator.wait_for(state="visible", timeout=5000)
         elif action.action == "assert_not_visible":
-            await page.locator(action.selector).wait_for(state="hidden", timeout=5000)
+            await locator.wait_for(state="hidden", timeout=5000)
         else:
             logger.warning("unknown_action", action=action.action)
             return False
@@ -47,6 +79,14 @@ async def _generate_dynamic_verification(explorer_snapshot: ExplorerSnapshot, re
     # Check if the repair handoff is relevant to the modified file
     target_file = repair_snapshot.target_file
     modified_symbols = repair_snapshot.modified_symbols
+    
+    # Log the repair context for debugging
+    logger.info(
+        "verifier_repair_context",
+        target_file=target_file,
+        modified_symbols=modified_symbols,
+        handoff_steps=len(repair_snapshot.verification_handoff.verification_steps)
+    )
     
     # If the repair handoff seems relevant (e.g., checking the same component), use it
     handoff = repair_snapshot.verification_handoff
@@ -118,6 +158,25 @@ async def verify_repair(explorer_snapshot: ExplorerSnapshot, repair_snapshot: Re
             logger.info("navigating_to_target", url=target_url)
             await page.goto(target_url, wait_until="networkidle", timeout=10000)
             
+            # Log DOM state for debugging
+            try:
+                ready_state = await page.evaluate("document.readyState")
+                logger.info("verifier_dom_ready", ready_state=ready_state)
+                
+                # Log all input elements
+                inputs = await page.evaluate("""
+                    () => Array.from(document.querySelectorAll('input')).map((el, i) => ({
+                        index: i,
+                        placeholder: el.placeholder,
+                        type: el.type,
+                        visible: el.offsetWidth > 0 && el.offsetHeight > 0,
+                        enabled: !el.disabled
+                    }))
+                """)
+                logger.info("verifier_input_elements", count=len(inputs), inputs=inputs)
+            except Exception as dom_error:
+                logger.warning("verifier_dom_inspection_failed", error=str(dom_error))
+            
             # Execute steps
             all_steps_passed = True
             for step in verification_steps:
@@ -126,6 +185,11 @@ async def verify_repair(explorer_snapshot: ExplorerSnapshot, repair_snapshot: Re
                 if not success:
                     all_steps_passed = False
                     pass_fail_reason = f"Verification failed at step: {step.action} on {step.selector}"
+                    # Take screenshot on failure
+                    try:
+                        await page.screenshot(path=screenshot_after_path)
+                    except:
+                        pass
                     break
                     
             await page.screenshot(path=screenshot_after_path)
