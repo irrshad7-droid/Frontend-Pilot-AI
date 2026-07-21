@@ -17,6 +17,9 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.5-flash")
 TRANSIENT_ERROR_CODES = [500, 502, 503, 504]
 MAX_RETRIES = 3
 
+# Default timeout for LLM requests (in seconds)
+LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "60"))
+
 
 class LLMError(Exception):
     """Structured error for LLM failures."""
@@ -69,6 +72,7 @@ async def get_provider_status() -> dict:
     if GOOGLE_API_KEY:
         try:
             from google import genai
+            from google.genai import types
             client = genai.Client(api_key=GOOGLE_API_KEY)
             # Try a minimal request to check quota
             client.models.generate_content(
@@ -128,6 +132,11 @@ def _is_quota_exhausted(error_msg: str) -> bool:
     error_lower = error_msg.lower()
     return "429" in error_lower or "resource_exhausted" in error_lower or "quota" in error_lower
 
+def _is_timeout_error(error_msg: str) -> bool:
+    """Check if error is a timeout error."""
+    error_lower = error_msg.lower()
+    return "timeout" in error_lower or "408" in error_lower or "499" in error_lower
+
 def _extract_quota_info(error_msg: str) -> dict:
     """Extract quota information from error message if present."""
     import re
@@ -171,7 +180,8 @@ Do not include any other text. Output only the JSON object.
         "gemini_prompt",
         model=LLM_MODEL,
         prompt_length=len(full_prompt),
-        available_files_in_prompt="AVAILABLE REPOSITORY FILES" in full_prompt
+        available_files_in_prompt="AVAILABLE REPOSITORY FILES" in full_prompt,
+        timeout=LLM_TIMEOUT
     )
     
     last_error = None
@@ -182,15 +192,20 @@ Do not include any other text. Output only the JSON object.
             
             client = genai.Client(api_key=GOOGLE_API_KEY)
             
-            logger.info(f"gemini_request_attempt", attempt=attempt)
+            logger.info("gemini_request_attempt", attempt=attempt)
             
-            response = client.models.generate_content(
-                model=LLM_MODEL,
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=response_format,
-                )
+            # Wrap the synchronous call in an async context with timeout
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.models.generate_content,
+                    model=LLM_MODEL,
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=response_format,
+                    )
+                ),
+                timeout=LLM_TIMEOUT
             )
             
             # Parse the response
@@ -200,6 +215,10 @@ Do not include any other text. Output only the JSON object.
             else:
                 raise LLMError("Empty response from Gemini", "gemini", "empty_response")
                 
+        except asyncio.TimeoutError:
+            error_msg = f"Request timed out after {LLM_TIMEOUT} seconds"
+            logger.error("gemini_request_timeout", attempt=attempt, timeout=LLM_TIMEOUT)
+            raise LLMError(error_msg, "gemini", "timeout")
         except ImportError:
             raise LLMError("google-genai package not installed", "gemini", "import")
         except Exception as e:
@@ -222,6 +241,11 @@ Do not include any other text. Output only the JSON object.
                     "gemini",
                     "quota_exhausted"
                 )
+            
+            # Check if this is a timeout error
+            if _is_timeout_error(error_msg):
+                logger.error("gemini_request_timeout", error=error_msg)
+                raise LLMError(error_msg, "gemini", "timeout")
             
             # Check if this is a transient error
             if _is_transient_error(error_msg) and attempt < MAX_RETRIES:
@@ -263,18 +287,25 @@ async def _call_openai(system_prompt: str, user_prompt: str, response_format: Ty
         
         client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         
-        completion = await client.beta.chat.completions.parse(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format=response_format,
-            temperature=0.0
+        completion = await asyncio.wait_for(
+            client.beta.chat.completions.parse(
+                model=LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format=response_format,
+                temperature=0.0
+            ),
+            timeout=LLM_TIMEOUT
         )
         
         return completion.choices[0].message.parsed
         
+    except asyncio.TimeoutError:
+        error_msg = f"Request timed out after {LLM_TIMEOUT} seconds"
+        logger.error("openai_request_timeout", timeout=LLM_TIMEOUT)
+        raise LLMError(error_msg, "openai", "timeout")
     except Exception as e:
         error_msg = str(e)
         error_type = "api"
